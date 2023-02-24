@@ -13,3 +13,6 @@ where type could be f8 or d8 for double precision floating point numbers, f4 or 
 - big endian: most significant byte first
 - little endian: least significant byte first (most common)
 
+add hpccourse23@gmail.com to repo
+
+
