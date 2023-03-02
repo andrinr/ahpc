@@ -16,3 +16,12 @@ where type could be f8 or d8 for double precision floating point numbers, f4 or 
 add hpccourse23@gmail.com to repo
 
 
+## Stack vs. Heap Memory
+
+In c and c++, the stack is managed by the compiler, whereas the heap is managed by the programmer using the `malloc` and `free` functions. 
+
+When we run a function in c or c++, the compiler allocates a block of memory on the stack for the function to use. This block of memory is called the stack frame. The stack frame contains the function's local variables, as well as the return address of the function. The stack frame is automatically deallocated when the function returns.
+
+Usually the stack runs from the highest memory address to the lowest memory address, whereas the heap runs from the lowest abailble memory address to the highest memory address. Multiple threads do not share the same stack, but they do share the same heap.
+
+Large data cannot 
