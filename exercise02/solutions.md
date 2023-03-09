@@ -8,9 +8,7 @@ Adding two arrays using the ``+`` operator results in a component-wise addition 
 ## 2
 
 - Line 6 sets all entires in the array to seven.
-
 - Line 9 will set all elements in the given ranges of array A to seven, as B is a subarray of A and not a copy.
-
 
 ## 3
 
@@ -28,7 +26,10 @@ int  main() {
     std::cout << A(0, 0, 0) << std::endl;
 }
 ```
+(also found in ``order.cpp``)
 
 ## 4
 
-```cpp
+Solutions in subfolder ``task4``
+
+![``task4/1.cpp``](task4.png)
