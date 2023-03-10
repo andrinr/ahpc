@@ -47,3 +47,10 @@ The log-log tells the story the best, as the runtime is linear in the number of 
 ![psc](mass_assignment/psc.png)
 
 
+## 4
+
+psc kernel mass assignment with openmp took 24888 ms
+with openmp and simd took 16065 ms
+
+Therfore openmp does actually slow down the assignment. 
+

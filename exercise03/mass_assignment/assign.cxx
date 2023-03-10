@@ -11,6 +11,10 @@
 #include <map>
 #include<stdio.h>
 
+#ifdef _OPENMP
+    #include <omp.h>
+#endif
+
 using namespace blitz;
 
 int main(int argc, char *argv[]) {
@@ -99,42 +103,86 @@ int main(int argc, char *argv[]) {
 
     std::string m = (std::string) argv[3];
 
-    for (int i=0; i<N; ++i) {
-        float x = (r(i,0) + 0.5) * nGrid;
-        float y = (r(i,1) + 0.5) * nGrid;
-        float z = (r(i,2) + 0.5) * nGrid;
+    #ifdef _OPENMP
+        #pragma omp parallel num_threads(8)
+        for (int i=0; i<N; ++i) {
+            float x = (r(i,0) + 0.5) * nGrid;
+            float y = (r(i,1) + 0.5) * nGrid;
+            float z = (r(i,2) + 0.5) * nGrid;
 
-        int gridX = int((r(i,0) + 0.5) * nGrid);
-        int gridY = int((r(i,1) + 0.5) * nGrid);
-        int gridZ = int((r(i,2) + 0.5) * nGrid);
+            int gridX = int((r(i,0) + 0.5) * nGrid);
+            int gridY = int((r(i,1) + 0.5) * nGrid);
+            int gridZ = int((r(i,2) + 0.5) * nGrid);
 
 
-        for (int j=-max_distance[m]; j<max_distance[m]+1; ++j) {
-            for (int k=-max_distance[m]; k<max_distance[m]+1; ++k) {
-                for (int l=-max_distance[m]; l<max_distance[m]+1; ++l) {
+            for (int j=-max_distance[m]; j<max_distance[m]+1; ++j) {
+                for (int k=-max_distance[m]; k<max_distance[m]+1; ++k) {
+                    for (int l=-max_distance[m]; l<max_distance[m]+1; ++l) {
 
-                    int coordX = gridX + j;
-                    int coordY = gridY + k;
-                    int coordZ = gridZ + l;
+                        int coordX = gridX + j;
+                        int coordY = gridY + k;
+                        int coordZ = gridZ + l;
 
-                    float centerX = coordX + 0.5;
-                    float centerY = coordY + 0.5;
-                    float centerZ = coordZ + 0.5;
+                        float centerX = coordX + 0.5;
+                        float centerY = coordY + 0.5;
+                        float centerZ = coordZ + 0.5;
 
-                    coordX = (coordX + nGrid) % nGrid;
-                    coordY = (coordY + nGrid) % nGrid;
-                    coordZ = (coordZ + nGrid) % nGrid;
+                        coordX = (coordX + nGrid) % nGrid;
+                        coordY = (coordY + nGrid) % nGrid;
+                        coordZ = (coordZ + nGrid) % nGrid;
 
-                    float distance = 
-                        (centerX - x) * (centerX - x) +
-                        (centerY - y) * (centerY - y) +
-                        (centerZ - z) * (centerZ - z);
-                        
-                    grid(coordX, coordY, coordZ) += kernels[m](sqrt(distance));;
+                        float distance = 
+                            (centerX - x) * (centerX - x) +
+                            (centerY - y) * (centerY - y) +
+                            (centerZ - z) * (centerZ - z);
+                        float value = kernels[m](sqrt(distance));
+
+                        #pragma omp atomic
+                        grid(coordX, coordY, coordZ) += value;
+                    }
                 }
             }
         }
-    }
+    #else
+        for (int i=0; i<N; ++i) {
+            float x = (r(i,0) + 0.5) * nGrid;
+            float y = (r(i,1) + 0.5) * nGrid;
+            float z = (r(i,2) + 0.5) * nGrid;
+
+            int gridX = int((r(i,0) + 0.5) * nGrid);
+            int gridY = int((r(i,1) + 0.5) * nGrid);
+            int gridZ = int((r(i,2) + 0.5) * nGrid);
+
+
+            for (int j=-max_distance[m]; j<max_distance[m]+1; ++j) {
+                for (int k=-max_distance[m]; k<max_distance[m]+1; ++k) {
+                    for (int l=-max_distance[m]; l<max_distance[m]+1; ++l) {
+
+                        int coordX = gridX + j;
+                        int coordY = gridY + k;
+                        int coordZ = gridZ + l;
+
+                        float centerX = coordX + 0.5;
+                        float centerY = coordY + 0.5;
+                        float centerZ = coordZ + 0.5;
+
+                        coordX = (coordX + nGrid) % nGrid;
+                        coordY = (coordY + nGrid) % nGrid;
+                        coordZ = (coordZ + nGrid) % nGrid;
+
+                        float distance = 
+                            (centerX - x) * (centerX - x) +
+                            (centerY - y) * (centerY - y) +
+                            (centerZ - z) * (centerZ - z);
+                        float value = kernels[m](sqrt(distance));
+
+                        grid(coordX, coordY, coordZ) += value;
+                    }
+                }
+            }
+        }
+    #endif
+
  
     std::chrono::high_resolution_clock::time_point t4 = std::chrono::high_resolution_clock::now();
     std::cout << "Mass assignment took: " << std::chrono::duration_cast<std::chrono::milliseconds>(t4-t3).count() << " ms" << std::endl;
