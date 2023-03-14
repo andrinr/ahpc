@@ -26,7 +26,7 @@ Projection took: 1 ms
 
 The linear linear plot is not very readbale as the first two measurements are very close by on the x-axis. 
 
-The log-log tells the story the best, as the runtime is linear in the number of elements. (todo)
+The log-log tells the story the best, as its clear how the runtime increase more than linearly with the number of particles.
 
 ## 3
 
