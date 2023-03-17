@@ -10,6 +10,8 @@
 #include <string>
 #include <map>
 #include <stdio.h>
+#include <new>
+#include <fftw3.h>
 
 #ifdef _OPENMP
     #include <omp.h>
@@ -44,11 +46,16 @@ int main(int argc, char *argv[]) {
     std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
     std::cout << "Reading file took: " << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count() << " ms" << std::endl;
 
+    std::chrono::high_resolution_clock::time_point t3 = std::chrono::high_resolution_clock::now();
 
     // Create Mass Assignment Grid
-    std::chrono::high_resolution_clock::time_point t3 = std::chrono::high_resolution_clock::now();
-    Array<float,3> grid(nGrid,nGrid,nGrid);
-    grid = 0;
+    typedef std::complex<float> cplx;
+    int mem_size = nGrid * nGrid * (nGrid+2);
+    float *memory_in = new (std::align_val_t(64)) float[mem_size];
+
+    TinyVector<int, 3> in_shape(nGrid, nGrid, nGrid+2);
+    Array<float,3> in(memory_in, in_shape, deleteDataWhenDone);
+    Array<float,3> in_no_pad = in(Range::all(), Range::all(), Range(0,nGrid));
 
     std::cerr << "Mass assignment method: " << argv[3] << std::endl;
 
@@ -140,7 +147,7 @@ int main(int argc, char *argv[]) {
                     #ifdef _OPENMP
                     #pragma omp atomic
                     #endif
-                    grid(coordX, coordY, coordZ) += value;
+                    in_no_pad(coordX, coordY, coordZ) += value;
                 }
             }
         }
@@ -149,6 +156,7 @@ int main(int argc, char *argv[]) {
     std::chrono::high_resolution_clock::time_point t4 = std::chrono::high_resolution_clock::now();
     std::cout << "Mass assignment took: " << std::chrono::duration_cast<std::chrono::milliseconds>(t4-t3).count() << " ms" << std::endl;
 
+    
     // Project the grid onto the xy-plane
     std::chrono::high_resolution_clock::time_point t5 = std::chrono::high_resolution_clock::now();
     Array<float,2> projected(nGrid,nGrid);
@@ -156,7 +164,7 @@ int main(int argc, char *argv[]) {
     for(int i=0; i<nGrid; ++i) {
         for(int j=0; j<nGrid; ++j) {
             for(int k=0; k<nGrid; ++k) {
-                projected(i,j) = max(grid(i,j,k), projected(i,j));
+                projected(i,j) = max(in_no_pad(i,j,k), projected(i,j));
             }
         }
     }
@@ -177,4 +185,13 @@ int main(int argc, char *argv[]) {
     }
 
     myfile.close();
+    
+    cplx *memory_out = reinterpret_cast <cplx*>( memory_in );
+    TinyVector<int, 3> out_shape(nGrid, nGrid, nGrid/2+1);
+    Array<cplx,3> out(memory_out, out_shape, deleteDataWhenDone);
+
+    fftwf_plan plan = fftwf_plan_dft_r2c_3d(nGrid, nGrid, nGrid, memory_in, (fftwf_complex*) memory_out, FFTW_ESTIMATE);
+    fftwf_execute(plan);
+    fftwf_destroy_plan(plan);
+
 }
