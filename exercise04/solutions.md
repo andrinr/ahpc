@@ -23,6 +23,7 @@ Previous mass assignment (ngp)   | Current mass assignment (ngp)
 ![](../exercise03/mass_assignment/tsc.png)  |  ![](mass_assignment/tsc.png)
 
 The two assigments look identical as expected.
+
 ## 4
 
 ```cpp
@@ -41,7 +42,7 @@ fftwf_destroy_plan(plan);
 
 ```
 
-The cast ``(fftwf_complex*)`` is safe as written in the fftw documentation. To link fftw we adapt the documentation as follows:
+The cast ``(fftwf_complex*)`` is safe as written in the fftw documentation. To link fftw we adapt the makefile as follows:
 
 ```makefile	
 CXX	= g++
