@@ -44,7 +44,6 @@ int main(int argc, char *argv[]) {
     std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
     std::cout << "Reading file took: " << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count() << " ms" << std::endl;
 
-
     // Create Mass Assignment Grid
     std::chrono::high_resolution_clock::time_point t3 = std::chrono::high_resolution_clock::now();
     Array<float,3> grid(nGrid,nGrid,nGrid);
@@ -163,7 +162,6 @@ int main(int argc, char *argv[]) {
 
     std::chrono::high_resolution_clock::time_point t6 = std::chrono::high_resolution_clock::now();
     std::cout << "Projection took: " << std::chrono::duration_cast<std::chrono::milliseconds>(t6-t5).count() << " ms" << std::endl;
-
 
     ofstream myfile;
     std::string filename = "out_" + (std::string) argv[3] + ".txt";

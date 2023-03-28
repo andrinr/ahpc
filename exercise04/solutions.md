@@ -15,7 +15,7 @@ Array<float,3> in(memory_in, in_shape, deleteDataWhenDone);
 ## 3
     
 ```cpp
-Array<float,3> in_no_pad = in(Range::all(), Range::all(), Range(0,nGrid));
+Array<float,3> in_no_pad = in(Range::all(), Range::all(), Range(0,nGrid-1));
 ```
 
 Previous mass assignment (ngp)   | Current mass assignment (ngp)
