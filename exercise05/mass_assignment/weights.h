@@ -27,7 +27,7 @@ inline int tsc_weights(float x, float *W) {
 inline int pcs_weights(float x, float *W) {
     int i = std::floor(x-1.5);
     W[0] = 1.0f/6.0f * (
-        2.0f - std::abs(std::pow(x-i-0.5f, 2))
+        std::pow(2.0f - std::abs(x-i-0.5f), 3)
     );
     W[1] = 1.0f/6.0f * (
         4.0f - 6.0f * std::pow(x-i-1.5f, 2) 
@@ -38,11 +38,8 @@ inline int pcs_weights(float x, float *W) {
         + 3.0f * std::abs(std::pow(x-i-2.5f, 3))
     );
     W[3] = 1.0f/6.0f * (
-        2.0f - std::abs(std::pow(x-i-3.5f, 2))
+        std::pow(2.0f - std::abs(x-i-3.5f), 3)
     );
-
-    std::cout << "W[0] = " << W[0] << " W[1] = " << W[1] << " W[2] = " << W[2] << " W[3] = " << W[3] << "\n";
 
     return i;
 }
-
