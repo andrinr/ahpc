@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <new>
 #include <fftw3.h>
+#include "weights.h"
 
 #ifdef _OPENMP
     #include <omp.h>
@@ -59,53 +60,19 @@ int main(int argc, char *argv[]) {
 
     std::cerr << "Mass assignment method: " << argv[3] << std::endl;
 
-    std::map<std::string, int> max_distance = {
-        { "ngp", 0 },
-        { "cic", 1 },
-        { "tsc", 2 },
-        { "psc", 2 }
+    std::map<std::string, int> range = {
+        { "ngp", 1 },
+        { "cic", 2 },
+        { "tsc", 3 },
+        { "pcs", 4 }
     };
 
-    typedef float (*kernel)(float);
+    typedef int (*kernel)(float, float*);
     std::map<std::string, kernel> kernels = {
-        { "ngp", [](float x) { 
-            if (x < 0.5) {
-                return 1.0f;
-            }
-            else {
-                return 0.0f;
-            }
-        } },
-        { "cic", [](float x) { 
-            if (x < 1) {
-                return 1.0f - x;
-            }
-            else {
-                return 0.0f;
-            }
-        } },
-        { "tsc", [](float x) { 
-            if (x < 0.5f) {
-                return (3.0f / 4.0f - x * x);
-            }
-            else if (x < 1.5f) {
-                return 0.5f * (1.5f - x) * (1.5f - x);
-            }
-            else {
-                return 0.0f;
-            }
-         } },
-        { "psc", [](float x) { 
-            if (x < 1.0f) {
-                return 1.0f / 6.0f * (4.0f - 6.0f * x * x + 3 * x * x * x);
-            }
-            else if (x < 2.0f) {
-                return (float) 1.0f / 6.0f * (2.0f - x) * (2.0f - x) * (2.0f - x);
-            }
-            else {
-                return (float) 0.0f;
-            }
-         } }
+        { "ngp", &ngp_weights },
+        { "cic", &cic_weights },
+        { "tsc", &tsc_weights },
+        { "pcs", &pcs_weights }
     };
 
     std::string m = (std::string) argv[3];
@@ -122,9 +89,17 @@ int main(int argc, char *argv[]) {
         int gridY = int((r(i,1) + 0.5) * nGrid);
         int gridZ = int((r(i,2) + 0.5) * nGrid);
 
-        for (int j=-max_distance[m]; j<=max_distance[m]; ++j) {
-            for (int k=-max_distance[m]; k<=max_distance[m]; ++k) {
-                for (int l=-max_distance[m]; l<=max_distance[m]; ++l) {
+        float* weightsX = new float[range[m]];
+        float* weightsY = new float[range[m]];
+        float* weightsZ = new float[range[m]];
+
+        int startX = kernels[m](std::abs(x - gridX), weightsX);
+        int startY = kernels[m](std::abs(y - gridY), weightsY);
+        int startZ = kernels[m](std::abs(z - gridZ), weightsZ);
+
+        for (int j=startX; j<=range[m]; ++j) {
+            for (int k=startY; k<=range[m]; ++k) {
+                for (int l=startZ; l<=range[m]; ++l) {
 
                     int coordX = gridX + j;
                     int coordY = gridY + k;
@@ -134,9 +109,7 @@ int main(int argc, char *argv[]) {
                     float dy = y - (coordY + 0.5);
                     float dz = z - (coordZ + 0.5);
 
-                    float weight = kernels[m](std::abs(dx));
-                    weight *= kernels[m](std::abs(dy));
-                    weight *= kernels[m](std::abs(dz));
+                    float weight = weightsX[j] * weightsY[k] * weightsZ[l];
 
                     coordX = (coordX + nGrid) % nGrid;
                     coordY = (coordY + nGrid) % nGrid;
