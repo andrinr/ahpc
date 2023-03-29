@@ -14,8 +14,9 @@ std::cout << "Sum: " << sum << std::endl;
 
 see [weights.h](mass_assignment/weights.h)
 
-also [makefile](mass_assignment/makefile) which automatically genereates the assign program as well as the test program. After compiling the test program is automatically executed. 
+also [makefile](mass_assignment/Makefile) which automatically genereates the assign program as well as the test program. After compiling the test program is automatically executed. 
 
 ## Task 3
 
+see [assign.cxx](mass_assignment/assign.cxx)
 

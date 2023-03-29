@@ -24,4 +24,9 @@ When we run a function in c or c++, the compiler allocates a block of memory on 
 
 Usually the stack runs from the highest memory address to the lowest memory address, whereas the heap runs from the lowest abailble memory address to the highest memory address. Multiple threads do not share the same stack, but they do share the same heap.
 
-Large data cannot 
+## Testing
+
+MTBF (mean time between failures) is the average time between failures of a system. MTBF is a measure of reliability. The higher the MTBF, the more reliable the system.
+
+Given a program that runs on a laptop error free for a year, it will only do so for a couple hours on a supercomputer.
+

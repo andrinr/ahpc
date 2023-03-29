@@ -9,10 +9,8 @@ inline int ngp_weights(float x, float *W) {
 
 inline int cic_weights(float x, float *W) {
     int i = std::floor(x-0.5f);
-
     W[0] = 1.0 - std::abs(x-i-0.5f);
     W[1] = 1.0 - std::abs(x-i-1.5f);
-
     return i;
 }
 
@@ -40,6 +38,5 @@ inline int pcs_weights(float x, float *W) {
     W[3] = 1.0f/6.0f * (
         std::pow(2.0f - std::abs(x-i-3.5f), 3)
     );
-
     return i;
 }

@@ -85,45 +85,37 @@ int main(int argc, char *argv[]) {
         float y = (r(i,1) + 0.5) * nGrid;
         float z = (r(i,2) + 0.5) * nGrid;
 
-        int gridX = int((r(i,0) + 0.5) * nGrid);
-        int gridY = int((r(i,1) + 0.5) * nGrid);
-        int gridZ = int((r(i,2) + 0.5) * nGrid);
-
         float* weightsX = new float[range[m]];
         float* weightsY = new float[range[m]];
         float* weightsZ = new float[range[m]];
 
-        int startX = kernels[m](std::abs(x - gridX), weightsX);
-        int startY = kernels[m](std::abs(y - gridY), weightsY);
-        int startZ = kernels[m](std::abs(z - gridZ), weightsZ);
+        int startX = kernels[m](x, weightsX);
+        int startY = kernels[m](y, weightsY);
+        int startZ = kernels[m](z, weightsZ);
+        // std::cout << "x: " << x << ", y: " << y << ", z: " << z << std::endl;
+        // std::cout << "startX: " << startX << ", startY: " << startY << ", startZ: " << startZ << std::endl;
 
-        for (int j=startX; j<=range[m]; ++j) {
-            for (int k=startY; k<=range[m]; ++k) {
-                for (int l=startZ; l<=range[m]; ++l) {
-
-                    int coordX = gridX + j;
-                    int coordY = gridY + k;
-                    int coordZ = gridZ + l;
-
-                    float dx = x - (coordX + 0.5);
-                    float dy = y - (coordY + 0.5);
-                    float dz = z - (coordZ + 0.5);
+        for (int j=0; j<range[m]; ++j) {
+            for (int k=0; k<range[m]; ++k) {
+                for (int l=0; l<range[m]; ++l) {
 
                     float weight = weightsX[j] * weightsY[k] * weightsZ[l];
 
-                    coordX = (coordX + nGrid) % nGrid;
-                    coordY = (coordY + nGrid) % nGrid;
-                    coordZ = (coordZ + nGrid) % nGrid;
-
+                    //std::cout << "j: " << (j + nGrid) % nGrid << ", k: " << (k + nGrid) % nGrid << ", l: " << (l + nGrid) % nGrid << std::endl;
+                    
                     #ifdef _OPENMP
                     #pragma omp atomic
                     #endif
-                    in_no_pad(coordX, coordY, coordZ) += weight * 1.0f;
+                    in_no_pad(
+                        (startX + j + nGrid) % nGrid, 
+                        (startY + k + nGrid) % nGrid, 
+                        (startZ + l + nGrid) % nGrid) 
+                        += weight * 1.0f;
                 }
             }
         }
     }
-        
+
     std::chrono::high_resolution_clock::time_point t4 = std::chrono::high_resolution_clock::now();
     std::cout << "Mass assignment took: " << std::chrono::duration_cast<std::chrono::milliseconds>(t4-t3).count() << " ms" << std::endl;
 

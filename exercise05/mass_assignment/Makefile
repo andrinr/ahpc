@@ -1,5 +1,5 @@
 CFLAGS = -O3 -std=c++17
-LDFLAGS = -lfftw3f -lm #-fopenmp
+LDFLAGS = -lfftw3f -lm -fopenmp
 
 all : assign test_weights test
 
