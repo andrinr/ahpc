@@ -147,7 +147,6 @@ int main(int argc, char *argv[]) {
     std::chrono::high_resolution_clock::time_point t6 = std::chrono::high_resolution_clock::now();
     std::cout << "Projection took: " << std::chrono::duration_cast<std::chrono::milliseconds>(t6-t5).count() << " ms" << std::endl;
 
-
     ofstream myfile;
     std::string filename = "out_" + (std::string) argv[3] + ".txt";
     myfile.open(filename);
