@@ -92,17 +92,11 @@ int main(int argc, char *argv[]) {
         int startX = kernels[m](x, weightsX);
         int startY = kernels[m](y, weightsY);
         int startZ = kernels[m](z, weightsZ);
-        // std::cout << "x: " << x << ", y: " << y << ", z: " << z << std::endl;
-        // std::cout << "startX: " << startX << ", startY: " << startY << ", startZ: " << startZ << std::endl;
 
         for (int j=0; j<range[m]; ++j) {
             for (int k=0; k<range[m]; ++k) {
                 for (int l=0; l<range[m]; ++l) {
-
                     float weight = weightsX[j] * weightsY[k] * weightsZ[l];
-
-                    //std::cout << "j: " << (j + nGrid) % nGrid << ", k: " << (k + nGrid) % nGrid << ", l: " << (l + nGrid) % nGrid << std::endl;
-                    
                     #ifdef _OPENMP
                     #pragma omp atomic
                     #endif
