@@ -1,7 +1,7 @@
 CFLAGS = -O3 -std=c++17
 LDFLAGS = -lfftw3f -lm #-fopenmp
 
-all : assign test_weights
+all : assign test_weights test
 
 # Main program
 assign : assign.o tipsy.o
@@ -22,3 +22,6 @@ test_weights.o : test_weights.cxx weights.h
 
 clean:
 	rm -f assign assign.o tipsy.o test_weights test_weights.o
+
+test : test_weights
+	./test_weights

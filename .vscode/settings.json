@@ -42,6 +42,7 @@
         "unordered_map": "cpp",
         "vector": "cpp",
         "functional": "cpp",
-        "optional": "cpp"
+        "optional": "cpp",
+        "cstdarg": "cpp"
     }
 }
