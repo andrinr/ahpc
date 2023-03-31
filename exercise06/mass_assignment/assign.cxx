@@ -13,6 +13,7 @@
 #include <new>
 #include <fftw3.h>
 #include "weights.h"
+#include <cmath>
 
 #ifdef _OPENMP
     #include <omp.h>
@@ -118,7 +119,6 @@ int main(int argc, char *argv[]) {
     float sum = blitz::sum(in_no_pad);
     std::cout << "Sum: " << sum << std::endl;
 
-    
     // Project the grid onto the xy-plane
     std::chrono::high_resolution_clock::time_point t5 = std::chrono::high_resolution_clock::now();
     Array<float,2> projected(nGrid,nGrid);
@@ -156,5 +156,49 @@ int main(int argc, char *argv[]) {
 
     fftwf_execute(plan);
     fftwf_destroy_plan(plan);
+
+    Array<float, 1> kx(nGrid);
+    Array<float, 1> ky(nGrid);
+    Array<float, 1> kz(nGrid/2);
+
+    for (int i = 0; i < nGrid/2; i++) {
+        kx(i) = i;
+        kx(nGrid/2 + i) = nGrid/2 - i;
+        ky(i) = i;
+        ky(nGrid/2 + i) = nGrid/2 - i;
+        kz(i) = i;
+    }
+
+    int nBins = 30;
+    int kMax = int(std::sqrt(
+        std::pow(kx(nGrid-1), 2) + 
+        std::pow(ky(nGrid-1), 2) + 
+        std::pow(kz(nGrid/2-1), 2)));
+    int dBin = kMax / nBins;
+
+    Array<float, 1> fPower(nBins);
+    Array<int, 1> nPower(nBins);
+
+    for(int i=0; i<nGrid; ++i) {
+        for(int j=0; j<nGrid; ++j) {
+            for(int l=0; l<nGrid/2; ++l) {
+                int k = int(std::sqrt(
+                    std::pow(kx(i), 2) + 
+                    std::pow(ky(j), 2) + 
+                    std::pow(kz(l), 2)) / kMax * nBins);
+
+                if (k >= nBins) {
+                    continue;
+                }
+
+                fPower(k) += std::norm(out(i, j, l));
+                nPower(k) += 1;
+            }
+        }
+    }
+
+    for(int i=0; i<nGrid; ++i) {
+        fPower(i) /= nPower(i);
+    }   
 
 }
