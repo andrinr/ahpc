@@ -2,14 +2,14 @@ CFLAGS = -O3 -std=c++17
 LDFLAGS = -lfftw3f -lm -fopenmp
 BUILDDIR = build/
 
-all : assign test_weights test
+all : main test_weights test
 
 # Main program
-assign : $(BUILDDIR)assign.o  $(BUILDDIR)tipsy.o
-	$(CXX) $(CFLAGS) -o assign  $(BUILDDIR)assign.o  $(BUILDDIR)tipsy.o $(LDFLAGS)
+main : $(BUILDDIR)main.o  $(BUILDDIR)tipsy.o
+	$(CXX) $(CFLAGS) -o assign  $(BUILDDIR)main.o  $(BUILDDIR)tipsy.o $(LDFLAGS)
 
- $(BUILDDIR)assign.o : assign.cxx tipsy.h weights.h
-	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)assign.o assign.cxx $(LDFLAGS)
+ $(BUILDDIR)main.o : main.cxx tipsy.h weights.h
+	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)main.o main.cxx $(LDFLAGS)
 
  $(BUILDDIR)tipsy.o : tipsy.cxx tipsy.h	
 	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)tipsy.o tipsy.cxx $(LDFLAGS)

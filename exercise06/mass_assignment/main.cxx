@@ -7,13 +7,11 @@
 #include "blitz/array.h"
 #include "tipsy.h"
 #include <chrono>
-#include <string>
-#include <map>
 #include <stdio.h>
 #include <new>
 #include <fftw3.h>
-#include "weights.h"
 #include <cmath>
+#include <assign.h>
 
 #ifdef _OPENMP
     #include <omp.h>
@@ -59,59 +57,8 @@ int main(int argc, char *argv[]) {
     Array<float,3> in(memory_in, in_shape, deleteDataWhenDone);
     Array<float,3> in_no_pad = in(Range::all(), Range::all(), Range(0,nGrid));
 
-    std::cerr << "Mass assignment method: " << argv[3] << std::endl;
-
-    std::map<std::string, int> range = {
-        { "ngp", 1 },
-        { "cic", 2 },
-        { "tsc", 3 },
-        { "pcs", 4 }
-    };
-
-    typedef int (*kernel)(float, float*);
-    std::map<std::string, kernel> kernels = {
-        { "ngp", &ngp_weights },
-        { "cic", &cic_weights },
-        { "tsc", &tsc_weights },
-        { "pcs", &pcs_weights }
-    };
-
-    std::string m = (std::string) argv[3];
-
-    #ifdef _OPENMP
-    #pragma omp parallel for
-    #endif
-    for (int i=0; i<N; ++i) {
-        float x = (r(i,0) + 0.5) * nGrid;
-        float y = (r(i,1) + 0.5) * nGrid;
-        float z = (r(i,2) + 0.5) * nGrid;
-
-        float* weightsX = new float[range[m]];
-        float* weightsY = new float[range[m]];
-        float* weightsZ = new float[range[m]];
-
-        int startX = kernels[m](x, weightsX);
-        int startY = kernels[m](y, weightsY);
-        int startZ = kernels[m](z, weightsZ);
-
-        for (int j=0; j<range[m]; ++j) {
-            for (int k=0; k<range[m]; ++k) {
-                for (int l=0; l<range[m]; ++l) {
-
-                    float weight = weightsX[j] * weightsY[k] * weightsZ[l];
-                    #ifdef _OPENMP
-                    #pragma omp atomic
-                    #endif
-                    in_no_pad(
-                        (startX + j + nGrid) % nGrid, 
-                        (startY + k + nGrid) % nGrid, 
-                        (startZ + l + nGrid) % nGrid) 
-                        += weight * 1.0f;
-                }
-            }
-        }
-    }
-
+    assign(r, in_no_pad, (string) argv[3]);
+    
     std::chrono::high_resolution_clock::time_point t4 = std::chrono::high_resolution_clock::now();
     std::cout << "Mass assignment took: " << std::chrono::duration_cast<std::chrono::milliseconds>(t4-t3).count() << " ms" << std::endl;
 
