@@ -1,3 +1,6 @@
+#ifndef WEIGHTS_H
+#define WEIGHTS_H
+
 #include <cmath>
 #include <iostream>
 
@@ -40,3 +43,5 @@ inline int pcs_weights(float x, float *W) {
     );
     return i;
 }
+
+#endif // WEIGHTS_H

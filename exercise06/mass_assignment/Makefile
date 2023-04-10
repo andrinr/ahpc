@@ -5,14 +5,20 @@ BUILDDIR = build/
 all : main test_weights test
 
 # Main program
-main : $(BUILDDIR)main.o  $(BUILDDIR)tipsy.o
-	$(CXX) $(CFLAGS) -o assign  $(BUILDDIR)main.o  $(BUILDDIR)tipsy.o $(LDFLAGS)
+main : main.o tipsy.o helpers.o timer.o
+	$(CXX) $(CFLAGS) -o main $(BUILDDIR)main.o $(BUILDDIR)tipsy.o $(BUILDDIR)helpers.o $(LDFLAGS)
 
- $(BUILDDIR)main.o : main.cxx tipsy.h weights.h
-	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)main.o main.cxx $(LDFLAGS)
+main.o : main.cxx tipsy.h helpers.h weights.h timer.h
+	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)main.o main.cxx
 
- $(BUILDDIR)tipsy.o : tipsy.cxx tipsy.h	
-	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)tipsy.o tipsy.cxx $(LDFLAGS)
+tipsy.o : tipsy.cxx tipsy.h	
+	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)tipsy.o tipsy.cxx
+
+helpers.o : helpers.cxx helpers.h	
+	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)helpers.o helpers.cxx
+
+timer.o : timer.cxx timer.h	
+	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)timer.o timer.cxx
 
 # Test program
 test_weights :  $(BUILDDIR)test_weights.o
@@ -22,7 +28,7 @@ test_weights :  $(BUILDDIR)test_weights.o
 	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)test_weights.o test_weights.cxx $(LDFLAGS)
 
 clean:
-	rm -f assign test_weights build/*
+	rm -f main test_weights build/*
 
 test : test_weights
 	./test_weights
