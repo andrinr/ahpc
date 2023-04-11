@@ -8,10 +8,12 @@
 #include <new>
 #include <fftw3.h>
 #include <string>
-
+#include <assert.h>
+#include "main.h"
 #include "tipsy.h"
 #include "helpers.h"
 #include "ptimer.h"
+#include "blitz/array.h"
 
 #ifdef _OPENMP
     #include <omp.h>
@@ -29,62 +31,42 @@ int main(int argc, char *argv[]) {
     int nGrid = 100;
     if (argc>2) nGrid = atoi(argv[2]);
 
+    blitz::Array<float,2> particles = load(argv[1]);
+
     PTimer timer;
     timer.start();
-
-    TipsyIO io;
-    io.open(argv[1]);
-    if (io.fail()) {
-        std::cerr << "Unable to open tipsy file " << argv[1] << std::endl;
-        return errno;
-    }
-
-    // Load particle positions
-    std::uint64_t N = io.count();
-    std::cerr << "Loading " << N << " particles" << std::endl;
-    Array<float,2> r(N,3);
-    io.load(r);
-
     timer.lap("Loading particles");
    
-    // Create Mass Assignment Grid
+    // Create Mass Assignment Grid with padding for fft
     typedef std::complex<float> cplx;
     int mem_size = nGrid * nGrid * (nGrid+2);
     float *memory_in = new (std::align_val_t(64)) float[mem_size];
 
+    // Create a blitz array that points to the memory
     TinyVector<int, 3> in_shape(nGrid, nGrid, nGrid+2);
     Array<float,3> in(memory_in, in_shape, deleteDataWhenDone);
+    // Create a blitz array that points to the memory without padding
     Array<float,3> in_no_pad = in(Range::all(), Range::all(), Range(0,nGrid));
 
-    assign(r, in_no_pad, (std::string) argv[3]);
+    // Assign the particles to the grid
+    assign(particles, in_no_pad, (std::string) argv[3]);
     
     timer.lap("Mass assignment");
-    
-    // compute the sum over all particles
+
+    // Compute the sum over all particles
     float sum = blitz::sum(in_no_pad);
-    std::cout << "Sum: " << sum << std::endl;
+    std::cout << "Sum of all particles: " << sum << std::endl;
 
     // Project the grid onto the xy-plane
-
-    Array<float,2> projected(nGrid,nGrid);
+    blitz::Array<float,2> projected(nGrid,nGrid);
     projected = 0;
     project(in_no_pad, projected);
 
+    // Output the projected grid
+    write<float>("projected", projected);
     timer.lap("Projection");
-
-    ofstream myfile;
-    std::string filename = "out_" + (std::string) argv[3] + ".txt";
-    myfile.open(filename);
-    for (int i=0; i<nGrid; ++i) {
-        for (int j=0; j<nGrid; ++j) {
-            myfile << projected(i,j);
-            if (j<nGrid-1) myfile << " ";
-        }
-        myfile << "\n";
-    }
-
-    myfile.close();
     
+    // Compute the FFT of the grid
     cplx *memory_out = reinterpret_cast <cplx*>( memory_in );
     TinyVector<int, 3> out_shape(nGrid, nGrid, nGrid/2+1);
     Array<cplx,3> out(memory_out, out_shape, neverDeleteData);
@@ -95,9 +77,48 @@ int main(int argc, char *argv[]) {
     fftwf_execute(plan);
     fftwf_destroy_plan(plan);
 
-    blitz::Array<float,1> bins(nGrid);
-
+    // Create bins for the power spectrum
     int nBins = 30;
-    bin(out, bins, nBins, true);
+    blitz::Array<float,2> bins(2, nBins);
+    bins = 0;
 
+    for (int i=0; i<nBins; ++i) {
+        bins(1,i) = (i+1) * 0.5;
+    }
+
+    blitz::Array<float,1> fPower = bins(0, Range::all());
+    bin(out, fPower, nBins, false);
+    // Output the power spectrum
+    write<float>("power", bins);
+}
+
+blitz::Array<float,2> load(std::string location) {
+    TipsyIO io;
+    io.open(location);
+    if (io.fail()) {
+        std::cerr << "Unable to open tipsy file " << location << std::endl;
+    }
+    // Load particle positions
+    std::uint64_t N = io.count();
+    Array<float,2> r(N,3);
+    io.load(r);
+
+    return r;
+}
+
+template <typename T> void write(std::string location, blitz::Array<T,2> data) {
+    ofstream myfile;
+    std::string filename = "out_" + location + ".txt";
+    myfile.open(filename);
+    int n = data.extent(0);
+    int m = data.extent(1);
+    for (int i=0; i<n; ++i) {
+        for (int j=0; j<m; ++j) {
+            myfile << data(i,j);
+            if (j<m-1) myfile << " ";
+        }
+        myfile << "\n";
+    }
+
+    myfile.close();
 }

@@ -1,25 +1,14 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-data = np.loadtxt('out_ngp.txt', delimiter=' ', unpack=True)
+data = np.loadtxt('out_projected.txt', delimiter=' ', unpack=True)
 data = np.log(data)
 plt.imshow(data, cmap='plasma', interpolation='nearest')
-plt.savefig('ngp.png')
+plt.savefig('projected.png')
+plt.show()
 
-
-data = np.loadtxt('out_cic.txt', delimiter=' ', unpack=True)
-data = np.log(data)
-plt.imshow(data, cmap='plasma', interpolation='nearest')
-plt.savefig('cic.png')
-
-data = np.loadtxt('out_tsc.txt', delimiter=' ', unpack=True)
-data = np.log(data)
-plt.imshow(data, cmap='plasma', interpolation='nearest')
-plt.savefig('tsc.png')
-
-
-data = np.loadtxt('out_psc.txt', delimiter=' ', unpack=True)
-data = np.log(data)
-plt.imshow(data, cmap='plasma', interpolation='nearest')
-plt.savefig('psc.png')
-
+data = np.loadtxt('out_power.txt', delimiter=' ', unpack=True)
+print(data[:,0])
+plt.plot(data[:, 1], data[:,0])
+plt.show()
+plt.savefig('power.png')

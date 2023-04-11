@@ -116,7 +116,9 @@ void bin(
     int dBin = kMax / nBins;
 
     blitz::Array<float, 1> fPower(nBins);
+    fPower = 0.0f;
     blitz::Array<int, 1> nPower(nBins);
+    nPower = 0;
 
     for(int i=0; i<nGrid; ++i) {
         for(int j=0; j<nGrid; ++j) {
@@ -136,7 +138,9 @@ void bin(
         }
     }
 
-    for(int i=0; i<nGrid; ++i) {
+    std::cout << "FPower: " << nPower << std::endl;
+
+    for(int i=0; i<nBins; ++i) {
         bins(i) = fPower(i) / nPower(i);
-    }   
+    }
 }
