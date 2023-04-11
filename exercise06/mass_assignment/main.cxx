@@ -4,16 +4,14 @@
 #include <fstream>
 #include <cstdint>
 #include <stdlib.h>
-#include <chrono>
 #include <stdio.h>
 #include <new>
 #include <fftw3.h>
-#include <cmath>
 #include <string>
 
 #include "tipsy.h"
 #include "helpers.h"
-#include "timer.h"
+#include "ptimer.h"
 
 #ifdef _OPENMP
     #include <omp.h>
@@ -31,7 +29,7 @@ int main(int argc, char *argv[]) {
     int nGrid = 100;
     if (argc>2) nGrid = atoi(argv[2]);
 
-    Timer timer = Timer();
+    PTimer timer;
     timer.start();
 
     TipsyIO io;

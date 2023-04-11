@@ -1,5 +1,5 @@
-#ifndef WEIGHTS_H_INCLUDED
-#define WEIGHTS_H_INCLUDED
+#ifndef HELPERS_H_INCLUDED
+#define HELPERS_H_INCLUDED
 
 #include "blitz/array.h"
 #include <string>
@@ -20,4 +20,4 @@ void bin(
     bool log);
 
 
-#endif // WEIGHTS_H_INCLUDED
+#endif // HELPERS_H_INCLUDED

@@ -5,10 +5,10 @@ BUILDDIR = build/
 all : main test_weights test
 
 # Main program
-main : main.o tipsy.o helpers.o timer.o
-	$(CXX) $(CFLAGS) -o main $(BUILDDIR)main.o $(BUILDDIR)tipsy.o $(BUILDDIR)helpers.o $(LDFLAGS)
+main : main.o tipsy.o ptimer.o helpers.o
+	$(CXX) $(CFLAGS) -o main $(BUILDDIR)main.o $(BUILDDIR)tipsy.o $(BUILDDIR)ptimer.o $(BUILDDIR)helpers.o $(LDFLAGS)
 
-main.o : main.cxx tipsy.h helpers.h weights.h timer.h
+main.o : main.cxx tipsy.h ptimer.h helpers.h weights.h
 	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)main.o main.cxx
 
 tipsy.o : tipsy.cxx tipsy.h	
@@ -17,8 +17,8 @@ tipsy.o : tipsy.cxx tipsy.h
 helpers.o : helpers.cxx helpers.h	
 	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)helpers.o helpers.cxx
 
-timer.o : timer.cxx timer.h	
-	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)timer.o timer.cxx
+ptimer.o : ptimer.cxx ptimer.h	
+	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)ptimer.o ptimer.cxx
 
 # Test program
 test_weights :  $(BUILDDIR)test_weights.o
