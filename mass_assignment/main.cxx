@@ -8,7 +8,8 @@
 #include <new>
 #include <fftw3.h>
 #include <string>
-#include <assert.h>
+#include <mpi.h>
+
 #include "main.h"
 #include "tipsy.h"
 #include "helpers.h"
@@ -16,7 +17,7 @@
 #include "blitz/array.h"
 
 #ifdef _OPENMP
-    #include <omp.h>
+#include <omp.h>
 #endif
 
 using namespace blitz;
@@ -31,11 +32,50 @@ int main(int argc, char *argv[]) {
     int nGrid = 100;
     if (argc>2) nGrid = atoi(argv[2]);
 
-    blitz::Array<float,2> particles = load(argv[1]);
+    int np, rank;
+    int errs = 0;
+    int provided, flag, claimed;
+    MPI_Init_thread(0, 0, MPI_THREAD_MULTIPLE, &provided);
+
+    MPI_Is_thread_main( &flag );
+    if (!flag) {
+        errs++;
+        printf( "This thread called init_thread but Is_thread_main gave false\n" );fflush(stdout);
+    }
+
+    MPI_Query_thread( &claimed );
+    if (claimed != provided) {
+        errs++;
+        printf( "Query thread gave thread level %d but Init_thread gave %d\n", claimed, provided );fflush(stdout);
+    }
+
+    MPI_Comm_size(MPI_COMM_WORLD, &np );
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    std::cout << "Rank: " << rank << " of " << np << std::endl;
+
+    TipsyIO io;
+    io.open(argv[1]);
+    if (io.fail()) {
+        std::cerr << "Unable to open tipsy file " << argv[1] << std::endl;
+    }
+    std::cout << "Rank: " << rank << " of " << np << " opened file" << std::endl;
+
+    // Load particle positions
+    std::uint64_t N = io.count();
 
     PTimer timer;
     timer.start();
-    timer.lap("Loading particles");
+    timer.lap("Loading particles"); 
+
+    int N_per = ((float)N + rank - 1) / np;
+    int i_start = rank * N_per;
+    int i_end = (rank+1) * N_per;
+
+    Array<float,2> particles(N_per,3);
+    io.load(particles);
+
+    std::cout << "N " << N << " N_per = " << N_per << " i_start = " << i_start << " i_end = " << i_end << std::endl;
    
     // Create Mass Assignment Grid with padding for fft
     typedef std::complex<float> cplx;
@@ -48,16 +88,16 @@ int main(int argc, char *argv[]) {
     // Create a blitz array that points to the memory without padding
     Array<float,3> in_no_pad = in(Range::all(), Range::all(), Range(0,nGrid));
 
-    // Assign the particles to the grid
+    // Assign the particles to the grid usin the given mass assignment method
     assign(particles, in_no_pad, (std::string) argv[3]);
     
     timer.lap("Mass assignment");
 
-    // Compute the sum over all particles
+    // Compute the sum over all particles to verify the mass assignment
     float sum = blitz::sum(in_no_pad);
     std::cout << "Sum of all particles: " << sum << std::endl;
 
-    // Project the grid onto the xy-plane
+    // Project the grid onto the xy-plane (3d -> 2d)
     blitz::Array<float,2> projected(nGrid,nGrid);
     projected = 0;
     project(in_no_pad, projected);
@@ -66,14 +106,14 @@ int main(int argc, char *argv[]) {
     write<float>("projected", projected);
     timer.lap("Projection");
     
-    // Compute the FFT of the grid
+    // Prepare memory to compute the FFT of the 3D grid
     cplx *memory_out = reinterpret_cast <cplx*>( memory_in );
     TinyVector<int, 3> out_shape(nGrid, nGrid, nGrid/2+1);
     Array<cplx,3> out(memory_out, out_shape, neverDeleteData);
 
+    // Compute the FFT of the grid
     fftwf_plan plan = fftwf_plan_dft_r2c_3d(
         nGrid, nGrid, nGrid, memory_in, (fftwf_complex*) memory_out, FFTW_ESTIMATE);
-
     fftwf_execute(plan);
     fftwf_destroy_plan(plan);
 
@@ -86,24 +126,14 @@ int main(int argc, char *argv[]) {
         bins(1,i) = (i+1) * 0.5;
     }
 
+    // Compute bins for the power spectrum
     blitz::Array<float,1> fPower = bins(0, Range::all());
     bin(out, fPower, nBins, false);
+    
     // Output the power spectrum
     write<float>("power", bins);
-}
 
-blitz::Array<float,2> load(std::string location) {
-    TipsyIO io;
-    io.open(location);
-    if (io.fail()) {
-        std::cerr << "Unable to open tipsy file " << location << std::endl;
-    }
-    // Load particle positions
-    std::uint64_t N = io.count();
-    Array<float,2> r(N,3);
-    io.load(r);
-
-    return r;
+    MPI_Finalize();
 }
 
 template <typename T> void write(std::string location, blitz::Array<T,2> data) {

@@ -1,3 +1,4 @@
+CXX = mpiCC
 CFLAGS = -O3 -std=c++17
 LDFLAGS = -lfftw3f -lm -fopenmp
 BUILDDIR = build/
@@ -6,7 +7,7 @@ all : main test_weights test
 
 # Main program
 main : main.o tipsy.o ptimer.o helpers.o
-	$(CXX) $(CFLAGS) -o main $(BUILDDIR)main.o $(BUILDDIR)tipsy.o $(BUILDDIR)ptimer.o $(BUILDDIR)helpers.o $(LDFLAGS)
+	$(CXX) $(CFLAGS) -o main $(BUILDDIR)main.o $(BUILDDIR)tipsy.o $(BUILDDIR)ptimer.o $(BUILDDIR)helpers.o $(BUILDDIR)messaging.o $(LDFLAGS)
 
 main.o : main.cxx tipsy.h ptimer.h helpers.h weights.h
 	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)main.o main.cxx
