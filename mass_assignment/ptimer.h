@@ -7,12 +7,13 @@
 
 class PTimer {
 public:
-    PTimer();
+    PTimer(int rank);
     void start();
     void lap(std::string name);
     void reset();
 
 private:
+    int rank;
     std::list<std::string> lap_names;
     std::list<int> lap_times;
     std::chrono::high_resolution_clock::time_point t;

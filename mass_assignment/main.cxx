@@ -52,31 +52,31 @@ int main(int argc, char *argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &np );
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    std::cout << "Rank: " << rank << " of " << np << std::endl;
+    PTimer timer(rank);
+    timer.start();
 
     TipsyIO io;
     io.open(argv[1]);
     if (io.fail()) {
         std::cerr << "Unable to open tipsy file " << argv[1] << std::endl;
     }
-    std::cout << "Rank: " << rank << " of " << np << " opened file" << std::endl;
 
     // Load particle positions
     std::uint64_t N = io.count();
 
-    PTimer timer;
-    timer.start();
-    timer.lap("Loading particles"); 
 
-    int N_per = ((float)N + rank - 1) / np;
+    int N_per = floor(((float)N + np - 1) / np);
     int i_start = rank * N_per;
     int i_end = (rank+1) * N_per;
 
-    Array<float,2> particles(N_per,3);
+    TinyVector<int, 2> lBound(i_start, 0);
+    TinyVector<int, 2> extent(N_per, 3);
+
+    Array<float,2> particles(lBound, extent);
     io.load(particles);
 
-    std::cout << "N " << N << " N_per = " << N_per << " i_start = " << i_start << " i_end = " << i_end << std::endl;
-   
+    timer.lap("Loading particles"); 
+
     // Create Mass Assignment Grid with padding for fft
     typedef std::complex<float> cplx;
     int mem_size = nGrid * nGrid * (nGrid+2);
@@ -88,7 +88,8 @@ int main(int argc, char *argv[]) {
     // Create a blitz array that points to the memory without padding
     Array<float,3> in_no_pad = in(Range::all(), Range::all(), Range(0,nGrid));
 
-    // Assign the particles to the grid usin the given mass assignment method
+    std::cout << "Rank: " << rank << " of " << np << " allocated memory" << std::endl;
+    // Assign the particles to the grid using the given mass assignment method
     assign(particles, in_no_pad, (std::string) argv[3]);
     
     timer.lap("Mass assignment");

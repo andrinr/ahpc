@@ -22,7 +22,7 @@ void assign(
 
     // Get number of particles
     int N = particles.extent(0);
-    
+
     std::map<std::string, int> range = {
         { "ngp", 1 },
         { "cic", 2 },
@@ -41,10 +41,12 @@ void assign(
     #ifdef _OPENMP
     #pragma omp parallel for
     #endif
-    for (int i=0; i<N; ++i) {
+    for (int i=particles.lbound(0); i<N + particles.lbound(0); ++i) {
         float x = (particles(i,0) + 0.5) * nGrid;
         float y = (particles(i,1) + 0.5) * nGrid;
         float z = (particles(i,2) + 0.5) * nGrid;
+
+        //std::cout << "Particle " << i << " at " << x << ", " << y << ", " << z << std::endl;
 
         float* weightsX = new float[range[method]];
         float* weightsY = new float[range[method]];
