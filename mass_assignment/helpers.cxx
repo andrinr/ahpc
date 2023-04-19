@@ -46,8 +46,6 @@ void assign(
         float y = (particles(i,1) + 0.5) * nGrid;
         float z = (particles(i,2) + 0.5) * nGrid;
 
-        //std::cout << "Particle " << i << " at " << x << ", " << y << ", " << z << std::endl;
-
         float* weightsX = new float[range[method]];
         float* weightsY = new float[range[method]];
         float* weightsZ = new float[range[method]];
@@ -103,22 +101,29 @@ void bin(
     blitz::Array<float, 1> ky(nGrid);
     blitz::Array<float, 1> kz(nGrid/2);
 
-    for (int i = 0; i < nGrid/2; i++) {
+    for (int i = 0; i <= nGrid/2; i++) {
         kx(i) = i;
-        kx(nGrid/2 + i) = nGrid/2 - 1 - i;
         ky(i) = i;
-        ky(nGrid/2 + i) = nGrid/2 - 1 - i;
         kz(i) = i;
     }
+
+    for (int i = 0; i < nGrid/2-1; i++) {
+        kx(i+nGrid/2+1) = -nGrid/2 + i + 1;
+        ky(i+nGrid/2+1) = -nGrid/2 + i + 1;
+    }
+
+    std::cout << "kx: " << kx << std::endl;
+    std::cout << "ky: " << ky << std::endl;
+    std::cout << "kz: " << kz << std::endl;
     
     int kMax = int(std::sqrt(
-        std::pow(kx(nGrid-1), 2) + 
-        std::pow(ky(nGrid-1), 2) + 
+        std::pow(kx(nGrid/2-1), 2) + 
+        std::pow(ky(nGrid/2-1), 2) + 
         std::pow(kz(nGrid/2-1), 2)));
     int dBin = kMax / nBins;
 
     blitz::Array<float, 1> fPower(nBins);
-    fPower = 0.0f;
+    fPower = 0;
     blitz::Array<int, 1> nPower(nBins);
     nPower = 0;
 
@@ -140,7 +145,8 @@ void bin(
         }
     }
 
-    std::cout << "FPower: " << nPower << std::endl;
+    std::cout << "FPower: " << fPower << std::endl;
+    std::cout << "NPower: " << nPower << std::endl;
 
     for(int i=0; i<nBins; ++i) {
         bins(i) = fPower(i) / nPower(i);

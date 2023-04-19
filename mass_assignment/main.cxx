@@ -80,11 +80,11 @@ int main(int argc, char *argv[]) {
     // Create Mass Assignment Grid with padding for fft
     typedef std::complex<float> cplx;
     int mem_size = nGrid * nGrid * (nGrid+2);
-    float *memory_in = new (std::align_val_t(64)) float[mem_size];
+    float *grid_memory = new (std::align_val_t(64)) float[mem_size];
 
     // Create a blitz array that points to the memory
     TinyVector<int, 3> in_shape(nGrid, nGrid, nGrid+2);
-    Array<float,3> grid(memory_in, in_shape, deleteDataWhenDone);
+    Array<float,3> grid(grid_memory, in_shape, deleteDataWhenDone);
     // Create a blitz array that points to the memory without padding
     Array<float,3> grid_no_pad = grid(Range::all(), Range::all(), Range(0,nGrid));
 
@@ -92,17 +92,22 @@ int main(int argc, char *argv[]) {
     // Assign the particles to the grid using the given mass assignment method
     assign(particles, grid_no_pad, (std::string) argv[3]);
     
-    timer.lap("Mass assignment");
-
     float sum = blitz::sum(grid);
     std::cout << "Sum of all particles before reduction: " << sum << std::endl;
+
+    // Get overdensity
+    grid_no_pad -= blitz::mean(grid_no_pad);
+    grid_no_pad /= blitz::mean(grid_no_pad);
+    
+    timer.lap("Mass assignment");
+
     // Reduce the grid over all processes
     if (rank != 0) {
         MPI_Reduce(
             grid.data(),
-            NULL,
+            grid.data(),
             grid.size(),
-            MPI_INT,
+            MPI_FLOAT,
             MPI_SUM,
             0,
             MPI_COMM_WORLD);
@@ -114,7 +119,7 @@ int main(int argc, char *argv[]) {
         MPI_IN_PLACE,
         grid.data(),
         grid.size(),
-        MPI_INT,
+        MPI_FLOAT,
         MPI_SUM,
         0,
         MPI_COMM_WORLD);
@@ -133,31 +138,31 @@ int main(int argc, char *argv[]) {
     timer.lap("Projection");
     
     // Prepare memory to compute the FFT of the 3D grid
-    cplx *memory_out = reinterpret_cast <cplx*>( memory_in );
-    TinyVector<int, 3> out_shape(nGrid, nGrid, nGrid/2+1);
-    Array<cplx,3> out(memory_out, out_shape, neverDeleteData);
-
+    cplx *memory_density_grid = reinterpret_cast <cplx*>( grid_memory );
+    TinyVector<int, 3> density_grid_shape(nGrid, nGrid, nGrid/2+1);
+    Array<cplx,3> density(memory_density_grid, density_grid_shape, neverDeleteData);
+    
     // Compute the FFT of the grid
     fftwf_plan plan = fftwf_plan_dft_r2c_3d(
-        nGrid, nGrid, nGrid, memory_in, (fftwf_complex*) memory_out, FFTW_ESTIMATE);
+        nGrid, nGrid, nGrid, grid_memory, (fftwf_complex*) memory_density_grid, FFTW_ESTIMATE);
     fftwf_execute(plan);
     fftwf_destroy_plan(plan);
 
     // Create bins for the power spectrum
-    int nBins = 30;
+    int nBins = 80;
     blitz::Array<float,2> bins(2, nBins);
     bins = 0;
 
     for (int i=0; i<nBins; ++i) {
-        bins(1,i) = (i+1) * 0.5;
+        bins(1,i) = i;
     }
 
     // Compute bins for the power spectrum
     blitz::Array<float,1> fPower = bins(0, Range::all());
-    bin(out, fPower, nBins, false);
+    bin(density, fPower, nBins, false);
     
     // Output the power spectrum
-    write<float>("power", bins);
+    write<float>("power" + to_string(N), bins);
 
     timer.lap("Power spectrum");
 

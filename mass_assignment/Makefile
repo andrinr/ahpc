@@ -7,7 +7,7 @@ all : main test_weights test
 
 # Main program
 main : main.o tipsy.o ptimer.o helpers.o
-	$(CXX) $(CFLAGS) -o main $(BUILDDIR)main.o $(BUILDDIR)tipsy.o $(BUILDDIR)ptimer.o $(BUILDDIR)helpers.o $(BUILDDIR)messaging.o $(LDFLAGS)
+	$(CXX) $(CFLAGS) -o main $(BUILDDIR)main.o $(BUILDDIR)tipsy.o $(BUILDDIR)ptimer.o $(BUILDDIR)helpers.o $(LDFLAGS)
 
 main.o : main.cxx tipsy.h ptimer.h helpers.h weights.h
 	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)main.o main.cxx
