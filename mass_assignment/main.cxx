@@ -84,24 +84,49 @@ int main(int argc, char *argv[]) {
 
     // Create a blitz array that points to the memory
     TinyVector<int, 3> in_shape(nGrid, nGrid, nGrid+2);
-    Array<float,3> in(memory_in, in_shape, deleteDataWhenDone);
+    Array<float,3> grid(memory_in, in_shape, deleteDataWhenDone);
     // Create a blitz array that points to the memory without padding
-    Array<float,3> in_no_pad = in(Range::all(), Range::all(), Range(0,nGrid));
+    Array<float,3> grid_no_pad = grid(Range::all(), Range::all(), Range(0,nGrid));
 
     std::cout << "Rank: " << rank << " of " << np << " allocated memory" << std::endl;
     // Assign the particles to the grid using the given mass assignment method
-    assign(particles, in_no_pad, (std::string) argv[3]);
+    assign(particles, grid_no_pad, (std::string) argv[3]);
     
     timer.lap("Mass assignment");
 
+    float sum = blitz::sum(grid);
+    std::cout << "Sum of all particles before reduction: " << sum << std::endl;
+    // Reduce the grid over all processes
+    if (rank != 0) {
+        MPI_Reduce(
+            grid.data(),
+            NULL,
+            grid.size(),
+            MPI_INT,
+            MPI_SUM,
+            0,
+            MPI_COMM_WORLD);
+        finalize();
+        return 0;
+    }
+
+    MPI_Reduce(
+        MPI_IN_PLACE,
+        grid.data(),
+        grid.size(),
+        MPI_INT,
+        MPI_SUM,
+        0,
+        MPI_COMM_WORLD);
+
     // Compute the sum over all particles to verify the mass assignment
-    float sum = blitz::sum(in_no_pad);
-    std::cout << "Sum of all particles: " << sum << std::endl;
+    float sum2 = blitz::sum(grid);
+    std::cout << "Sum of all particles after reduction: " << sum2 << std::endl;
 
     // Project the grid onto the xy-plane (3d -> 2d)
     blitz::Array<float,2> projected(nGrid,nGrid);
     projected = 0;
-    project(in_no_pad, projected);
+    project(grid_no_pad, projected);
 
     // Output the projected grid
     write<float>("projected", projected);
@@ -134,6 +159,12 @@ int main(int argc, char *argv[]) {
     // Output the power spectrum
     write<float>("power", bins);
 
+    timer.lap("Power spectrum");
+
+    finalize();
+}
+
+void finalize() {
     MPI_Finalize();
 }
 

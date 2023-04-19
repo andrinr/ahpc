@@ -25,7 +25,7 @@ ptimer.o : ptimer.cxx ptimer.h
 test_weights :  $(BUILDDIR)test_weights.o
 	$(CXX) $(CFLAGS) -o test_weights  $(BUILDDIR)test_weights.o  $(LDFLAGS)
 
- $(BUILDDIR)test_weights.o : test_weights.cxx weights.h
+$(BUILDDIR)test_weights.o : test_weights.cxx weights.h
 	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)test_weights.o test_weights.cxx $(LDFLAGS)
 
 clean:
