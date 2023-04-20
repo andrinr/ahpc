@@ -19,3 +19,6 @@ Table of results:
 
 ## Task 3
 
+Power spectrum with 80 bins and logaritmic binning:
+
+![power](mass_assignment/power_all.png)

@@ -32,6 +32,15 @@ int main(int argc, char *argv[]) {
     int nGrid = 100;
     if (argc>2) nGrid = atoi(argv[2]);
 
+    int nBins = 100;
+    if (argc>3) nBins = atoi(argv[3]);
+
+    std::string method = "ngp";
+    if (argc>4) method = argv[4];
+
+    bool logBining = false;
+    if (argc>5) logBining = atoi(argv[5]);
+
     int np, rank;
     int errs = 0;
     int provided, flag, claimed;
@@ -64,7 +73,6 @@ int main(int argc, char *argv[]) {
     // Load particle positions
     std::uint64_t N = io.count();
 
-
     int N_per = floor(((float)N + np - 1) / np);
     int i_start = rank * N_per;
     int i_end = (rank+1) * N_per;
@@ -90,14 +98,15 @@ int main(int argc, char *argv[]) {
 
     std::cout << "Rank: " << rank << " of " << np << " allocated memory" << std::endl;
     // Assign the particles to the grid using the given mass assignment method
-    assign(particles, grid_no_pad, (std::string) argv[3]);
-    
+    assign(particles, grid_no_pad, method);
+
     float sum = blitz::sum(grid);
     std::cout << "Sum of all particles before reduction: " << sum << std::endl;
 
     // Get overdensity
-    grid_no_pad -= blitz::mean(grid_no_pad);
-    grid_no_pad /= blitz::mean(grid_no_pad);
+    float mean = blitz::mean(grid);
+    grid_no_pad -= mean;
+    grid_no_pad /= mean;
     
     timer.lap("Mass assignment");
 
@@ -149,7 +158,6 @@ int main(int argc, char *argv[]) {
     fftwf_destroy_plan(plan);
 
     // Create bins for the power spectrum
-    int nBins = 80;
     blitz::Array<float,2> bins(2, nBins);
     bins = 0;
 
@@ -159,7 +167,7 @@ int main(int argc, char *argv[]) {
 
     // Compute bins for the power spectrum
     blitz::Array<float,1> fPower = bins(0, Range::all());
-    bin(density, fPower, nBins, false);
+    bin(density, fPower, nBins, logBining);
     
     // Output the power spectrum
     write<float>("power" + to_string(N), bins);

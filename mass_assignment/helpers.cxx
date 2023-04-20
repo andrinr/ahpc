@@ -111,16 +111,8 @@ void bin(
         kx(i+nGrid/2+1) = -nGrid/2 + i + 1;
         ky(i+nGrid/2+1) = -nGrid/2 + i + 1;
     }
-
-    std::cout << "kx: " << kx << std::endl;
-    std::cout << "ky: " << ky << std::endl;
-    std::cout << "kz: " << kz << std::endl;
     
-    int kMax = int(std::sqrt(
-        std::pow(kx(nGrid/2-1), 2) + 
-        std::pow(ky(nGrid/2-1), 2) + 
-        std::pow(kz(nGrid/2-1), 2)));
-    int dBin = kMax / nBins;
+    int kMax = getK(nGrid/2, nGrid/2, nGrid/2-1);
 
     blitz::Array<float, 1> fPower(nBins);
     fPower = 0;
@@ -130,17 +122,15 @@ void bin(
     for(int i=0; i<nGrid; ++i) {
         for(int j=0; j<nGrid; ++j) {
             for(int l=0; l<nGrid/2; ++l) {
-                int k = int(std::sqrt(
-                    std::pow(kx(i), 2) + 
-                    std::pow(ky(j), 2) + 
-                    std::pow(kz(l), 2)) / kMax * nBins);
+                int k = getK(kx(i), ky(j), kz(l));
+                int index = getIndex(k, kMax, nBins, log);
 
-                if (k >= nBins) {
+                if (index >= nBins) {
                     continue;
                 }
 
-                fPower(k) += std::norm(grid(i, j, l));
-                nPower(k) += 1;
+                fPower(index) += std::norm(grid(i, j, l));
+                nPower(index) += 1;
             }
         }
     }
@@ -150,5 +140,17 @@ void bin(
 
     for(int i=0; i<nBins; ++i) {
         bins(i) = fPower(i) / nPower(i);
+    }
+}
+
+int getK(int x, int y, int z) {
+    return int(std::sqrt(std::pow(x, 2) + std::pow(y, 2) + std::pow(z, 2)));
+}
+
+int getIndex(int k, int kmax, int nBins, bool log) {
+    if (log) {
+        return int(std::log((float)k) / std::log((float) kmax) * nBins);
+    } else {
+        return int((float)k / kmax * nBins);
     }
 }

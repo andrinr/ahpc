@@ -19,5 +19,8 @@ void bin(
     int nBins,
     bool log);
 
+int getK(
+    int x, int y, int z);
 
+int getIndex (int k, int kmax, int nBins, bool log);
 #endif // HELPERS_H_INCLUDED
