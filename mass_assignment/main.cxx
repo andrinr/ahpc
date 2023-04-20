@@ -74,6 +74,19 @@ int main(int argc, char *argv[]) {
     std::uint64_t N = io.count();
 
     int N_per = floor(((float)N + np - 1) / np);
+
+    // Handle odd number of particles
+    if (rank == np-1) {
+        N_per = N - (np-1) * N_per;
+    }
+
+    // Handle more processes than particles
+    if (N_per == 0) {
+        throw std::runtime_error("More processes than particles");
+        finalize();
+        return 0;
+    }
+
     int i_start = rank * N_per;
     int i_end = (rank+1) * N_per;
 
