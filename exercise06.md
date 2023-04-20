@@ -16,12 +16,13 @@ The file is written from [main](mass_assignment/main.cxx) with the ``write`` fun
 
 # Task 3
 
-Table describing the results:
+Power Spectrum on 100^3 particles with linear bining:
 
 | 80 bins | 100 bins (==nGrid) |
 |----------------|----------------|
 | ![power](mass_assignment/power_80bins.png)| ![power](mass_assignment/power_100bins.png)             |
 
+Note that in the 100 bins case there are nan values as the number of entries in a single bin can b zero, in that case a division by zero occurs.
 
 # Task 4
 

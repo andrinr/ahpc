@@ -4,6 +4,7 @@
 #include <string>
 #include <list>
 #include <chrono>
+#include "blitz/array.h"
 
 class PTimer {
 public:

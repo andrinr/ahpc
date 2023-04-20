@@ -1,5 +1,8 @@
 #include "ptimer.h"
 #include <iostream>
+#include <fstream>
+#include <stdlib.h>
+#include <stdio.h>
 
 PTimer::PTimer(int rank) {
     lap_names = std::list<std::string>();
@@ -25,3 +28,4 @@ void PTimer::reset() {
     lap_names.clear();
     lap_times.clear();
 }
+

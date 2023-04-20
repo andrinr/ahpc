@@ -7,6 +7,8 @@ mpirun -n 2 main ../data/B100.00100 100 ngp
 ```
 It does not parallelize the work but simply runs everything twice.
 
+All the relevant code can be found in the [main.cxx](mass_assignment/main.cxx) file.
+
 ## Task 2
 
 Table of results:
@@ -16,9 +18,10 @@ Table of results:
 | 1              | 11             | 233                  |
 | 2              | 6              | 127                  |
 
+All the relevant code can be found in the [main.cxx](mass_assignment/main.cxx) file.
 
 ## Task 3
 
-Power spectrum with 80 bins and logaritmic binning:
+![compare.png](mass_assignment/compare.png)
 
-![power](mass_assignment/power_all.png)
+The line is as straight as numerical precision allows it to be. 
