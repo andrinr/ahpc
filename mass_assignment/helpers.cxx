@@ -99,7 +99,7 @@ void bin(
     int nGrid = grid.extent(0);
     blitz::Array<float, 1> kx(nGrid);
     blitz::Array<float, 1> ky(nGrid);
-    blitz::Array<float, 1> kz(nGrid/2);
+    blitz::Array<float, 1> kz(nGrid/2 + 1);
 
     for (int i = 0; i <= nGrid/2; i++) {
         kx(i) = i;
@@ -112,7 +112,8 @@ void bin(
         ky(i+nGrid/2+1) = -nGrid/2 + i + 1;
     }
     
-    int kMax = getK(nGrid/2, nGrid/2, nGrid/2-1);
+    int kMax = getK(nGrid/2, nGrid/2, nGrid/2);
+    std::cout << "kMax: " << kMax << std::endl;
 
     blitz::Array<float, 1> fPower(nBins);
     fPower = 0;
