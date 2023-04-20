@@ -12,5 +12,7 @@ plt.loglog(data500[:, 1], data500[::,0], label='125000000')
 
 legend = ['100^2', '200^2', '500^2']
 plt.legend(legend, loc='upper right')
+plt.xlabel('k')
+plt.ylabel('P(k)')
 plt.show()
 plt.savefig('power.png')
