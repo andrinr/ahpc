@@ -112,15 +112,10 @@ int main(int argc, char *argv[]) {
     std::cout << "Rank: " << rank << " of " << np << " allocated memory" << std::endl;
     // Assign the particles to the grid using the given mass assignment method
     assign(particles, grid_no_pad, method);
-
+    
     float sum = blitz::sum(grid);
     std::cout << "Sum of all particles before reduction: " << sum << std::endl;
 
-    // Get overdensity
-    float mean = blitz::mean(grid);
-    grid_no_pad -= mean;
-    grid_no_pad /= mean;
-    
     timer.lap("Mass assignment");
 
     // Reduce the grid over all processes
@@ -150,6 +145,11 @@ int main(int argc, char *argv[]) {
     float sum2 = blitz::sum(grid);
     std::cout << "Sum of all particles after reduction: " << sum2 << std::endl;
 
+    // Get overdensity
+    float mean = blitz::mean(grid);
+    grid_no_pad -= mean;
+    grid_no_pad /= mean;
+    
     // Project the grid onto the xy-plane (3d -> 2d)
     blitz::Array<float,2> projected(nGrid,nGrid);
     projected = 0;

@@ -125,7 +125,7 @@ void bin(
             for(int l=0; l<nGrid/2; ++l) {
                 int k = getK(kx(i), ky(j), kz(l));
                 int index = getIndex(k, kMax, nBins, log);
-
+           
                 if (index >= nBins) {
                     continue;
                 }
