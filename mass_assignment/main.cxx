@@ -99,51 +99,83 @@ int main(int argc, char *argv[]) {
 
     timer.lap("Loading particles"); 
 
+    sortParticles(particles);
+
+    timer.lap("Sorting particles");
+
     long alloc_local, local_n0, local_0_start, i, j;
 
     alloc_local = fftw_mpi_local_size_3d(
         nGrid, nGrid, nGrid, MPI_COMM_WORLD,
         &local_n0, &local_0_start);
 
-    long* all_local_n0 = new long[np];
+    //long* all_local_n0 = new long[np];
+    blitz::Array<long,1> all_local_n0(nGrid);
+
     MPI_Allgather(
         &local_n0,
         1,
         MPI_LONG,
-        all_local_n0,
+        all_local_n0.data(),
         1,
         MPI_LONG,
         MPI_COMM_WORLD);
 
-    long* all_local_0_start = new long[np];
+    blitz::Array<long,1> all_local_0_start(nGrid);
     MPI_Allgather(
         &local_0_start,
         1,
         MPI_LONG,
-        all_local_0_start,
+        all_local_0_start.data(),
         1,
         MPI_LONG,
         MPI_COMM_WORLD);
 
-    timer.lap("Allocating memory");
-
-    int* slabToRank = new int[nGrid];
+    blitz::Array<int,1> slabToRank(nGrid);
     int current_rank = 0;
-    int total_n0 = 0;
+    int total = 0;
     for (int i = 0; i < nGrid; i++) {
-        slabToRank[i] = current_rank;
+        slabToRank(i) = current_rank;
+        total += all_local_n0(i);
 
-        if (i + total_n0 == all_local_n0[current_rank]) {
-            total_n0 += all_local_n0[current_rank];
+        if (total >= N) {
             current_rank++;
+            total = 0;
         }
     } 
 
-    timer.lap("Slab to rank");
+    blitz::Array<int,1> sendcounts(np);
+    blitz::Array<int,1> recvcounts(np);
+    sendcounts = 0;
+    recvcounts = 0;
 
-    sortParticles(particles);
+    for (int i = i_start; i < i_end; i++) {
+        int slab = floor((particles(i,0)+0.5) * nGrid);
+        int particleRank = slabToRank(slab);
+        if (particleRank == rank) {
+            continue;
+        }
+        sendcounts(slabToRank(slab))++;
+    }
 
-    timer.lap("Sorting particles");
+    for (int i = 0; i < np; i++) {
+        std::cout << "from " << i << " to " << " send " << sendcounts(i) << std::endl;
+    }
+
+    timer.lap("Counting particles");
+
+    MPI_Alltoall(
+        sendcounts.data(),
+        1,
+        MPI_INT,
+        recvcounts.data(),
+        1,
+        MPI_INT,
+        MPI_COMM_WORLD);
+
+    for (int i = 0; i < np; i++) {
+        std::cout << "from " << i << " to " << rank << " rec " << recvcounts(i) << std::endl;
+    }
 
     GeneralArrayStorage<3> storage;
     storage.ordering() = firstRank, secondRank, thirdRank;
