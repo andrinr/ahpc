@@ -1,14 +1,15 @@
 // This uses features from C++17, so you may have to turn this on to compile
 // g++ -std=c++17 -O3 -o assign assign.cxx tipsy.cxx
-#include <iostream>
-#include <fstream>
-#include <cstdint>
+#include <iostream> // std::cout
+#include <fstream> // std::ifstream
+#include <cstdint> // uint32_t
 #include <stdlib.h>
-#include <stdio.h>
-#include <new>
-#include <fftw3.h>
-#include <string>
-#include <mpi.h>
+#include <stdio.h> 
+#include <new> //std::align_val_t
+#include <string> // std::string
+#include <fftw3.h> // FFTW
+#include <mpi.h> // MPI
+#include <fftw3-mpi.h> // MPI FFTW
 
 #include "main.h"
 #include "tipsy.h"
@@ -98,18 +99,67 @@ int main(int argc, char *argv[]) {
 
     timer.lap("Loading particles"); 
 
+    long alloc_local, local_n0, local_0_start, i, j;
+
+    alloc_local = fftw_mpi_local_size_3d(
+        nGrid, nGrid, nGrid, MPI_COMM_WORLD,
+        &local_n0, &local_0_start);
+
+    long* all_local_n0 = new long[np];
+    MPI_Allgather(
+        &local_n0,
+        1,
+        MPI_LONG,
+        all_local_n0,
+        1,
+        MPI_LONG,
+        MPI_COMM_WORLD);
+
+    long* all_local_0_start = new long[np];
+    MPI_Allgather(
+        &local_0_start,
+        1,
+        MPI_LONG,
+        all_local_0_start,
+        1,
+        MPI_LONG,
+        MPI_COMM_WORLD);
+
+    timer.lap("Allocating memory");
+
+    int* slabToRank = new int[nGrid];
+    int current_rank = 0;
+    int total_n0 = 0;
+    for (int i = 0; i < nGrid; i++) {
+        slabToRank[i] = current_rank;
+
+        if (i + total_n0 == all_local_n0[current_rank]) {
+            total_n0 += all_local_n0[current_rank];
+            current_rank++;
+        }
+    } 
+
+    timer.lap("Slab to rank");
+
+    sortParticles(particles);
+
+    timer.lap("Sorting particles");
+
+    GeneralArrayStorage<3> storage;
+    storage.ordering() = firstRank, secondRank, thirdRank;
+    storage.base() = local_0_start, 0, 0;
+
     // Create Mass Assignment Grid with padding for fft
     typedef std::complex<float> cplx;
-    int mem_size = nGrid * nGrid * (nGrid+2);
-    float *grid_memory = new (std::align_val_t(64)) float[mem_size];
+    int mem_size = local_n0 * nGrid * (nGrid+2);
+    std::cout << "mem_size: " << mem_size << std::endl;
+    float *grid_data = new (std::align_val_t(64)) float[mem_size];
 
     // Create a blitz array that points to the memory
-    TinyVector<int, 3> in_shape(nGrid, nGrid, nGrid+2);
-    Array<float,3> grid(grid_memory, in_shape, deleteDataWhenDone);
+    Array<float,3> grid(grid_data, shape(local_n0, nGrid, nGrid *2), deleteDataWhenDone, storage);
     // Create a blitz array that points to the memory without padding
     Array<float,3> grid_no_pad = grid(Range::all(), Range::all(), Range(0,nGrid));
 
-    std::cout << "Rank: " << rank << " of " << np << " allocated memory" << std::endl;
     // Assign the particles to the grid using the given mass assignment method
     assign(particles, grid_no_pad, method);
     
@@ -149,24 +199,25 @@ int main(int argc, char *argv[]) {
     float mean = blitz::mean(grid);
     grid_no_pad -= mean;
     grid_no_pad /= mean;
-    
-    // Project the grid onto the xy-plane (3d -> 2d)
-    blitz::Array<float,2> projected(nGrid,nGrid);
-    projected = 0;
-    project(grid_no_pad, projected);
 
-    // Output the projected grid
-    write<float>("projected", projected);
-    timer.lap("Projection");
+
+    // // Project the grid onto the xy-plane (3d -> 2d)
+    // blitz::Array<float,2> projected(nGrid,nGrid);
+    // projected = 0;
+    // project(grid_no_pad, projected);
+
+    // // Output the projected grid
+    // write<float>("projected", projected);
+    // timer.lap("Projection");
     
     // Prepare memory to compute the FFT of the 3D grid
-    cplx *memory_density_grid = reinterpret_cast <cplx*>( grid_memory );
+    cplx *memory_density_grid = reinterpret_cast <cplx*>( grid_data );
     TinyVector<int, 3> density_grid_shape(nGrid, nGrid, nGrid/2+1);
     Array<cplx,3> density(memory_density_grid, density_grid_shape, neverDeleteData);
     
     // Compute the FFT of the grid
     fftwf_plan plan = fftwf_plan_dft_r2c_3d(
-        nGrid, nGrid, nGrid, grid_memory, (fftwf_complex*) memory_density_grid, FFTW_ESTIMATE);
+        nGrid, nGrid, nGrid, grid_data, (fftwf_complex*) memory_density_grid, FFTW_ESTIMATE);
     fftwf_execute(plan);
     fftwf_destroy_plan(plan);
 

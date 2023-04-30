@@ -23,4 +23,8 @@ int getK(
     int x, int y, int z);
 
 int getIndex (int k, int kmax, int nBins, bool log);
+
+void sortParticles(blitz::Array<float, 2> particles);
+
 #endif // HELPERS_H_INCLUDED
+

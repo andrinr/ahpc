@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include "blitz/array.h"
 #include <stdio.h>
+#include <algorithm> // sort
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -154,4 +155,22 @@ int getIndex(int k, int kmax, int nBins, bool log) {
     } else {
         return int((float)k / kmax * nBins);
     }
+}
+
+void sortParticles(blitz::Array<float, 2> particles) {
+    struct Particle {
+        float x;
+        float y;
+        float z;
+    };
+
+    Particle* particle_Object = reinterpret_cast<Particle*>(particles.data());
+
+    std::sort(
+        particle_Object, 
+        particle_Object + particles.rows(),
+        [&](Particle a, Particle b){ 
+            return a.x < b.x;
+        }
+    );
 }
