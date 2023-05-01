@@ -20,11 +20,7 @@ void assign(
     blitz::Array<float, 3> grid,
     std::string method) 
 {
-    // Get size of grid
-    int nGrid = grid.extent(0);
-
-    // Get number of particles
-    int N = particles.extent(0);
+    std::cout << "Assigning " << particles.extent(0) << " particles to a " << grid.extent(0) << "x" << grid.extent(1) << "x" << grid.extent(2) << " grid" << std::endl;
 
     std::map<std::string, int> range = {
         { "ngp", 1 },
@@ -45,9 +41,9 @@ void assign(
     #pragma omp parallel for
     #endif
     for (int i=particles.lbound(0); i< particles.extent(0) + particles.lbound(0); ++i) {
-        float x = (particles(i,0) + 0.5) * nGrid;
-        float y = (particles(i,1) + 0.5) * nGrid;
-        float z = (particles(i,2) + 0.5) * nGrid;
+        float x = (particles(i,0) + 0.5) * grid.extent(0);
+        float y = (particles(i,1) + 0.5) * grid.extent(1);
+        float z = (particles(i,2) + 0.5) * grid.extent(2);
 
         float* weightsX = new float[range[method]];
         float* weightsY = new float[range[method]];
@@ -66,11 +62,16 @@ void assign(
                     #ifdef _OPENMP
                     #pragma omp atomic
                     #endif
-                    grid(
-                        (startX + j + nGrid) % nGrid, 
-                        (startY + k + nGrid) % nGrid, 
-                        (startZ + l + nGrid) % nGrid) 
-                        += weight * 1.0f;
+                    /*grid(
+                        (startX + j + grid.extent(0)) % grid.extent(1), 
+                        (startY + k + grid.extent(1)) % grid.extent(2), 
+                        (startZ + l + grid.extent(2)) % grid.extent(3)) 
+                        += weight * 1.0f;*/
+
+                    grid (
+                        startX + j,
+                        startY + k,
+                        startZ + l) += weight * 1.0f;
                 }
             }
         }

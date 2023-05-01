@@ -1,6 +1,6 @@
 CXX = mpiCC
 CFLAGS = -O3 -std=c++17
-LDFLAGS = -lfftw3_mpi -lfftw3f -lm -fopenmp
+LDFLAGS = -lfftw3f_mpi -lfftw3f -lm -fopenmp
 BUILDDIR = build/
 SRCDIR = src/
 

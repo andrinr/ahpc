@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
 
     // Get slab decomposition of grid
     long alloc_local, slab_size_long, slab_start_long, i, j;
-    alloc_local = fftw_mpi_local_size_3d(
+    alloc_local = fftwf_mpi_local_size_3d(
         nGrid, nGrid, nGrid, MPI_COMM_WORLD,
         &slab_size_long, &slab_start_long);
 
@@ -167,8 +167,10 @@ int main(int argc, char *argv[]) {
     // Create a blitz array that points to the memory
     blitz::Array<float,3> grid(
         grid_data, blitz::shape(slab_size, nGrid, nGrid *2), blitz::deleteDataWhenDone, storage);
+
+    std::cout << "grid size: " << grid.lbound() << std::endl;
     // Create a blitz array that points to the memory without padding
-    blitz::Array<float,3> grid_no_pad = grid(blitz::Range::all(), blitz::Range::all(), blitz::Range(0,nGrid));
+    blitz::Array<float,3> grid_no_pad = grid(blitz::Range::all(), blitz::Range::all(), blitz::Range(0,nGrid-1));
 
     std::cout << "grid size: " << grid.size() << std::endl;
     // Assign the particles to the grid using the given mass assignment method
@@ -183,16 +185,6 @@ int main(int argc, char *argv[]) {
     float mean = blitz::mean(grid);
     grid_no_pad -= mean;
     grid_no_pad /= mean;
-
-
-    // // Project the grid onto the xy-plane (3d -> 2d)
-    // blitz::Array<float,2> projected(nGrid,nGrid);
-    // projected = 0;
-    // project(grid_no_pad, projected);
-
-    // // Output the projected grid
-    // write<float>("projected", projected);
-    // timer.lap("Projection");
     
     // Prepare memory to compute the FFT of the 3D grid
     cplx *memory_density_grid = reinterpret_cast <cplx*>( grid_data );
@@ -200,8 +192,10 @@ int main(int argc, char *argv[]) {
     blitz::Array<cplx,3> density(memory_density_grid, density_grid_shape, blitz::neverDeleteData);
     
     // Compute the FFT of the grid
-    fftwf_plan plan = fftwf_mpi_plan_dft_3d(
-        nGrid, nGrid, nGrid, grid_data, (fftwf_complex*) memory_density_grid, FFTW_ESTIMATE);
+    fftwf_plan plan = fftwf_mpi_plan_dft_r2c_3d(
+        nGrid, nGrid, nGrid, grid_data, (fftwf_complex*) memory_density_grid, 
+        MPI_COMM_WORLD, FFTW_ESTIMATE);
+
     fftwf_execute(plan);
     fftwf_destroy_plan(plan);
 
@@ -231,7 +225,7 @@ template <typename T> void write(std::string location, blitz::Array<T,2> data) {
     int m = data.extent(1);
     for (int i=0; i<n; ++i) {
         for (int j=0; j<m; ++j) {
-            myfile << data(i,j);
+            myfile << data(i,j);    
             if (j<m-1) myfile << " ";
         }
         myfile << "\n";
