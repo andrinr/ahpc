@@ -26,5 +26,7 @@ int getIndex (int k, int kmax, int nBins, bool log);
 
 void sortParticles(blitz::Array<float, 2> particles);
 
+template <typename T> void write(std::string location, blitz::Array<T,2> data);
+
 #endif // HELPERS_H_INCLUDED
 

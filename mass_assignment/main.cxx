@@ -1,7 +1,6 @@
 // This uses features from C++17, so you may have to turn this on to compile
 // g++ -std=c++17 -O3 -o assign assign.cxx tipsy.cxx
 #include <iostream> // std::cout
-#include <fstream> // std::ifstream
 #include <cstdint> // uint32_t
 #include <stdlib.h>
 #include <stdio.h> 
@@ -11,7 +10,7 @@
 #include <mpi.h> // MPI
 #include <fftw3-mpi.h> // MPI FFTW
 
-# include "comm.h"
+#include "comm.h"
 #include "main.h"
 #include "tipsy.h"
 #include "helpers.h"
@@ -21,8 +20,6 @@
 #ifdef _OPENMP
 #include <omp.h>
 #endif
-
-using namespace blitz;
 
 int main(int argc, char *argv[]) {
     if (argc<=2) {
@@ -75,10 +72,10 @@ int main(int argc, char *argv[]) {
     int i_start_load = rank * N_load;
     int i_end_load = (rank+1) * N_load;
 
-    TinyVector<int, 2> lBound(i_start_load, 0);
-    TinyVector<int, 2> extent(N_load, 3);
+    blitz::TinyVector<int, 2> lBound(i_start_load, 0);
+    blitz::TinyVector<int, 2> extent(N_load, 3);
 
-    Array<float,2> particlesUnsorted(lBound, extent);
+    blitz::Array<float,2> particlesUnsorted(lBound, extent);
     io.load(particlesUnsorted);
 
     timer.lap("Loading particles"); 
@@ -88,28 +85,28 @@ int main(int argc, char *argv[]) {
     timer.lap("Sorting particles");
 
     // Get slab decomposition of grid
-    long alloc_local, local_n0_, local_0_start_, i, j;
+    long alloc_local, slab_size_long, slab_start_long, i, j;
     alloc_local = fftw_mpi_local_size_3d(
         nGrid, nGrid, nGrid, MPI_COMM_WORLD,
-        &local_n0_, &local_0_start_);
+        &slab_size_long, &slab_start_long);
 
-    int local_n0 = local_n0;
-    int local_0_start = nGrid;
+    int slab_size = slab_size_long;
+    int slab_start = slab_start_long;
 
     // Communicate the number of particles in each slab to all processes
-    blitz::Array<int,1> all_local_n0(nGrid);
+    blitz::Array<int,1> slab_sizes(nGrid);
     MPI_Allgather(
-        &local_n0, 1, MPI_INT, all_local_n0.data(), 1, MPI_INT, MPI_COMM_WORLD);
+        &slab_size, 1, MPI_INT, slab_sizes.data(), 1, MPI_INT, MPI_COMM_WORLD);
 
-    blitz::Array<int,1> all_local_0_start(nGrid);
+    blitz::Array<int,1> slab_starts(nGrid);
     MPI_Allgather(
-        &local_0_start, 1, MPI_INT, all_local_0_start.data(), 1, MPI_INT, MPI_COMM_WORLD);
+        &slab_start, 1, MPI_INT, slab_starts.data(), 1, MPI_INT, MPI_COMM_WORLD);
 
     // Compute slab to rank mapping
     blitz::Array<int,1> slabToRank(nGrid);
     int current_rank = 0;
     for (int i = 0; i < nGrid; i++) {
-        if (current_rank < np-1 && i == all_local_0_start(current_rank+1)) {
+        if (current_rank < np-1 && i == slab_starts(current_rank+1)) {
             current_rank++;
         }
         slabToRank(i) = current_rank;
@@ -131,34 +128,49 @@ int main(int argc, char *argv[]) {
     MPI_Alltoall(
         sendcounts.data(), 1, MPI_INT, recvcounts.data(), 1, MPI_INT, MPI_COMM_WORLD);
 
+    blitz::Array<int,1> senddispls(np);
+    blitz::Array<int,1> recvdispls(np);
+
+    // Compute send and receive displacements
+    senddispls(0) = 0;
+    recvdispls(0) = 0;
+
+    for (int i = 1; i < np; i++) {
+        senddispls(i) = senddispls(i-1) + sendcounts(i-1);
+        recvdispls(i) = recvdispls(i-1) + recvcounts(i-1);
+    }
+
     // Find total number of particles for this rank
-    int N_process = blitz::sum(recvcounts);
+    int N_particles = blitz::sum(recvcounts);
+
+    std::cout << "Rank " << rank << " has " << N_particles << " particles" << std::endl;
     // Allocate memory for particles
-    blitz::Array<float,2> particles(N_process, 3);
+    blitz::Array<float,2> particles(N_particles, 3);
 
     // Communicate the particles to each process
     MPI_Alltoallv(
-        particlesUnsorted.data(), sendcounts.data(), all_local_0_start.data(), MPI_FLOAT,
-        particles.data(), recvcounts.data(), all_local_0_start.data(), MPI_FLOAT,
+        particlesUnsorted.data(), sendcounts.data(), senddispls.data(), MPI_FLOAT,
+        particles.data(), recvcounts.data(), recvdispls.data(), MPI_FLOAT,
         MPI_COMM_WORLD);
     
     timer.lap("Communicating particles");
 
-    GeneralArrayStorage<3> storage;
-    storage.ordering() = firstRank, secondRank, thirdRank;
-    storage.base() = local_0_start, 0, 0;
+    blitz::GeneralArrayStorage<3> storage;
+    storage.ordering() = blitz::firstRank, blitz::secondRank, blitz::thirdRank;
+    storage.base() = slab_start, 0, 0;
 
     // Create Mass Assignment Grid with padding for fft
     typedef std::complex<float> cplx;
-    int mem_size = local_n0 * nGrid * (nGrid+2);
-    std::cout << "mem_size: " << mem_size << std::endl;
+    int mem_size = slab_size * nGrid * (nGrid+2);
     float *grid_data = new (std::align_val_t(64)) float[mem_size];
 
     // Create a blitz array that points to the memory
-    Array<float,3> grid(grid_data, shape(local_n0, nGrid, nGrid *2), deleteDataWhenDone, storage);
+    blitz::Array<float,3> grid(
+        grid_data, blitz::shape(slab_size, nGrid, nGrid *2), blitz::deleteDataWhenDone, storage);
     // Create a blitz array that points to the memory without padding
-    Array<float,3> grid_no_pad = grid(Range::all(), Range::all(), Range(0,nGrid));
+    blitz::Array<float,3> grid_no_pad = grid(blitz::Range::all(), blitz::Range::all(), blitz::Range(0,nGrid));
 
+    std::cout << "grid size: " << grid.size() << std::endl;
     // Assign the particles to the grid using the given mass assignment method
     assign(particles, grid_no_pad, method);
     
@@ -166,32 +178,6 @@ int main(int argc, char *argv[]) {
     std::cout << "Sum of all particles before reduction: " << sum << std::endl;
 
     timer.lap("Mass assignment");
-
-    // Reduce the grid over all processes
-    if (rank != 0) {
-        MPI_Reduce(
-            grid.data(),
-            grid.data(),
-            grid.size(),
-            MPI_FLOAT,
-            MPI_SUM,
-            0,
-            MPI_COMM_WORLD);
-        return 0;
-    }
-
-    MPI_Reduce(
-        MPI_IN_PLACE,
-        grid.data(),
-        grid.size(),
-        MPI_FLOAT,
-        MPI_SUM,
-        0,
-        MPI_COMM_WORLD);
-
-    // Compute the sum over all particles to verify the mass assignment
-    float sum2 = blitz::sum(grid);
-    std::cout << "Sum of all particles after reduction: " << sum2 << std::endl;
 
     // Get overdensity
     float mean = blitz::mean(grid);
@@ -210,11 +196,11 @@ int main(int argc, char *argv[]) {
     
     // Prepare memory to compute the FFT of the 3D grid
     cplx *memory_density_grid = reinterpret_cast <cplx*>( grid_data );
-    TinyVector<int, 3> density_grid_shape(nGrid, nGrid, nGrid/2+1);
-    Array<cplx,3> density(memory_density_grid, density_grid_shape, neverDeleteData);
+    blitz::TinyVector<int, 3> density_grid_shape(nGrid, nGrid, nGrid/2+1);
+    blitz::Array<cplx,3> density(memory_density_grid, density_grid_shape, blitz::neverDeleteData);
     
     // Compute the FFT of the grid
-    fftwf_plan plan = fftwf_plan_dft_r2c_3d(
+    fftwf_plan plan = fftwf_mpi_plan_dft_3d(
         nGrid, nGrid, nGrid, grid_data, (fftwf_complex*) memory_density_grid, FFTW_ESTIMATE);
     fftwf_execute(plan);
     fftwf_destroy_plan(plan);
@@ -228,19 +214,17 @@ int main(int argc, char *argv[]) {
     }
 
     // Compute bins for the power spectrum
-    blitz::Array<float,1> fPower = bins(0, Range::all());
+    blitz::Array<float,1> fPower = bins(0, blitz::Range::all());
     bin(density, fPower, nBins, logBining);
     
     // Output the power spectrum
-    write<float>("power" + to_string(N_total), bins);
+    write<float>("power" + std::to_string(N_total), bins);
 
     timer.lap("Power spectrum");
-
-
 }
 
 template <typename T> void write(std::string location, blitz::Array<T,2> data) {
-    ofstream myfile;
+    std::ofstream myfile;
     std::string filename = "out_" + location + ".txt";
     myfile.open(filename);
     int n = data.extent(0);

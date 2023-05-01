@@ -5,9 +5,11 @@
 #include "helpers.h"
 #include <cmath>
 #include <stdlib.h>
-#include "blitz/array.h"
 #include <stdio.h>
 #include <algorithm> // sort
+#include <fstream> // std::ifstream
+#include <iostream> // std::cout
+
 
 #ifdef _OPENMP
 #include <omp.h>
