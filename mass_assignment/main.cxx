@@ -11,6 +11,7 @@
 #include <mpi.h> // MPI
 #include <fftw3-mpi.h> // MPI FFTW
 
+# include "comm.h"
 #include "main.h"
 #include "tipsy.h"
 #include "helpers.h"
@@ -42,25 +43,9 @@ int main(int argc, char *argv[]) {
     bool logBining = false;
     if (argc>5) logBining = atoi(argv[5]);
 
-    int np, rank;
-    int errs = 0;
-    int provided, flag, claimed;
-    MPI_Init_thread(0, 0, MPI_THREAD_MULTIPLE, &provided);
-
-    MPI_Is_thread_main( &flag );
-    if (!flag) {
-        errs++;
-        printf( "This thread called init_thread but Is_thread_main gave false\n" );fflush(stdout);
-    }
-
-    MPI_Query_thread( &claimed );
-    if (claimed != provided) {
-        errs++;
-        printf( "Query thread gave thread level %d but Init_thread gave %d\n", claimed, provided );fflush(stdout);
-    }
-
-    MPI_Comm_size(MPI_COMM_WORLD, &np );
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    Communicator comm;
+    int rank = comm.rank;
+    int np = comm.np;
 
     PTimer timer(rank);
     timer.start();
@@ -72,51 +57,53 @@ int main(int argc, char *argv[]) {
     }
 
     // Load particle positions
-    std::uint64_t N = io.count();
+    std::uint64_t N_total = io.count();
 
-    int N_per = floor(((float)N + np - 1) / np);
+    int N_load = floor(((float)N_total + np - 1) / np);
 
     // Handle odd number of particles
     if (rank == np-1) {
-        N_per = N - (np-1) * N_per;
+        N_load = N_total - (np-1) * N_load;
     }
 
     // Handle more processes than particles
-    if (N_per == 0) {
+    if (N_load == 0) {
         throw std::runtime_error("More processes than particles");
-        finalize();
         return 0;
     }
 
-    int i_start = rank * N_per;
-    int i_end = (rank+1) * N_per;
+    int i_start_load = rank * N_load;
+    int i_end_load = (rank+1) * N_load;
 
-    TinyVector<int, 2> lBound(i_start, 0);
-    TinyVector<int, 2> extent(N_per, 3);
+    TinyVector<int, 2> lBound(i_start_load, 0);
+    TinyVector<int, 2> extent(N_load, 3);
 
-    Array<float,2> particles(lBound, extent);
-    io.load(particles);
+    Array<float,2> particlesUnsorted(lBound, extent);
+    io.load(particlesUnsorted);
 
     timer.lap("Loading particles"); 
 
     // Sort particles by their x position
-    sortParticles(particles);
+    sortParticles(particlesUnsorted);
     timer.lap("Sorting particles");
 
     // Get slab decomposition of grid
-    long alloc_local, local_n0, local_0_start, i, j;
+    long alloc_local, local_n0_, local_0_start_, i, j;
     alloc_local = fftw_mpi_local_size_3d(
         nGrid, nGrid, nGrid, MPI_COMM_WORLD,
-        &local_n0, &local_0_start);
+        &local_n0_, &local_0_start_);
+
+    int local_n0 = local_n0;
+    int local_0_start = nGrid;
 
     // Communicate the number of particles in each slab to all processes
-    blitz::Array<long,1> all_local_n0(nGrid);
+    blitz::Array<int,1> all_local_n0(nGrid);
     MPI_Allgather(
-        &local_n0, 1, MPI_LONG, all_local_n0.data(), 1, MPI_LONG, MPI_COMM_WORLD);
+        &local_n0, 1, MPI_INT, all_local_n0.data(), 1, MPI_INT, MPI_COMM_WORLD);
 
-    blitz::Array<long,1> all_local_0_start(nGrid);
+    blitz::Array<int,1> all_local_0_start(nGrid);
     MPI_Allgather(
-        &local_0_start, 1, MPI_LONG, all_local_0_start.data(), 1, MPI_LONG, MPI_COMM_WORLD);
+        &local_0_start, 1, MPI_INT, all_local_0_start.data(), 1, MPI_INT, MPI_COMM_WORLD);
 
     // Compute slab to rank mapping
     blitz::Array<int,1> slabToRank(nGrid);
@@ -134,12 +121,9 @@ int main(int argc, char *argv[]) {
     sendcounts = 0;
     recvcounts = 0;
 
-    for (int i = i_start; i < i_end; i++) {
-        int slab = floor((particles(i,0)+0.5) * nGrid);
+    for (int i = i_start_load; i < i_end_load; i++) {
+        int slab = floor((particlesUnsorted(i,0)+0.5) * nGrid);
         int particleRank = slabToRank(slab);
-        if (particleRank == rank) {
-            continue;
-        }
         sendcounts(slabToRank(slab))++;
     }
 
@@ -148,19 +132,17 @@ int main(int argc, char *argv[]) {
         sendcounts.data(), 1, MPI_INT, recvcounts.data(), 1, MPI_INT, MPI_COMM_WORLD);
 
     // Find total number of particles for this rank
+    int N_process = blitz::sum(recvcounts);
+    // Allocate memory for particles
+    blitz::Array<float,2> particles(N_process, 3);
 
-
-    for (int i = 0; i < np; i++) {
-        if (i == rank) {
-            continue;
-        }
-        if (sendcounts(i) > 0) {
-            std::cout << "Rank " << rank << " sending " << sendcounts(i) << " particles to rank " << i << std::endl;
-        }
-        if (recvcounts(i) > 0) {
-            std::cout << "Rank " << rank << " receiving " << recvcounts(i) << " particles from rank " << i << std::endl;
-        }
-    }
+    // Communicate the particles to each process
+    MPI_Alltoallv(
+        particlesUnsorted.data(), sendcounts.data(), all_local_0_start.data(), MPI_FLOAT,
+        particles.data(), recvcounts.data(), all_local_0_start.data(), MPI_FLOAT,
+        MPI_COMM_WORLD);
+    
+    timer.lap("Communicating particles");
 
     GeneralArrayStorage<3> storage;
     storage.ordering() = firstRank, secondRank, thirdRank;
@@ -195,7 +177,6 @@ int main(int argc, char *argv[]) {
             MPI_SUM,
             0,
             MPI_COMM_WORLD);
-        finalize();
         return 0;
     }
 
@@ -251,15 +232,11 @@ int main(int argc, char *argv[]) {
     bin(density, fPower, nBins, logBining);
     
     // Output the power spectrum
-    write<float>("power" + to_string(N), bins);
+    write<float>("power" + to_string(N_total), bins);
 
     timer.lap("Power spectrum");
 
-    finalize();
-}
 
-void finalize() {
-    MPI_Finalize();
 }
 
 template <typename T> void write(std::string location, blitz::Array<T,2> data) {

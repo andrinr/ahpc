@@ -1,0 +1,27 @@
+TARGET_EXEC = main
+
+BUILD_DIR := build
+SRC_DIRS := src
+
+# Find all .cxx files in the src subdirectory
+SRCS := $(shell find $(SRC_DIRS) -name '*.cxx')
+OBJS := $(SRCS:%=$(BUILD_DIR)/%.o)
+
+DEPS := $(OBJS:.o=.d)
+
+# compiler flags
+CXX = mpiCC
+LDFLAGS = -lfftw3_mpi -lfftw3f -lm -fopenmp
+CXXFLAGS = -O3 -std=c++17
+
+# final program
+$(BUILD_DIR)/$(TARGET_EXEC): $(OBJS)
+	$(CXX) $(OBJS) -o $@ $(LDFLAGS)
+
+# Build step for C++ source
+$(BUILD_DIR)/%.cpp.o: %.cpp
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+clean:
+	rm -r $(BUILD_DIR)

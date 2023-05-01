@@ -42,7 +42,7 @@ void assign(
     #ifdef _OPENMP
     #pragma omp parallel for
     #endif
-    for (int i=particles.lbound(0); i<N + particles.lbound(0); ++i) {
+    for (int i=particles.lbound(0); i< particles.extent(0) + particles.lbound(0); ++i) {
         float x = (particles(i,0) + 0.5) * nGrid;
         float y = (particles(i,1) + 0.5) * nGrid;
         float z = (particles(i,2) + 0.5) * nGrid;

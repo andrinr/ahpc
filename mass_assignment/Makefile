@@ -2,14 +2,19 @@ CXX = mpiCC
 CFLAGS = -O3 -std=c++17
 LDFLAGS = -lfftw3_mpi -lfftw3f -lm -fopenmp
 BUILDDIR = build/
+SRCDIR = src/
 
 all : main test_weights test
 
 # Main program
-main : main.o tipsy.o ptimer.o helpers.o
-	$(CXX) $(CFLAGS) -o main $(BUILDDIR)main.o $(BUILDDIR)tipsy.o $(BUILDDIR)ptimer.o $(BUILDDIR)helpers.o $(LDFLAGS)
+MAINOBJS = main.o tipsy.o ptimer.o helpers.o comm.o
+# prepend the build directory to the object files
+MAINOBJS := $(addprefix $(BUILDDIR), $(MAINOBJS))
 
-main.o : main.cxx tipsy.h ptimer.h helpers.h weights.h
+main : main.o tipsy.o ptimer.o helpers.o comm.o
+	$(CXX) $(CFLAGS) -o main $(MAINOBJS) $(LDFLAGS)
+
+main.o : main.cxx tipsy.h ptimer.h helpers.h weights.h comm.h
 	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)main.o main.cxx
 
 tipsy.o : tipsy.cxx tipsy.h	
@@ -20,6 +25,9 @@ helpers.o : helpers.cxx helpers.h
 
 ptimer.o : ptimer.cxx ptimer.h	
 	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)ptimer.o ptimer.cxx
+
+comm.o : comm.cxx comm.h	
+	$(CXX) $(CFLAGS) -c -o  $(BUILDDIR)comm.o comm.cxx
 
 # Test program
 test_weights :  $(BUILDDIR)test_weights.o
