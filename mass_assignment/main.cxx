@@ -99,51 +99,36 @@ int main(int argc, char *argv[]) {
 
     timer.lap("Loading particles"); 
 
+    // Sort particles by their x position
     sortParticles(particles);
-
     timer.lap("Sorting particles");
 
+    // Get slab decomposition of grid
     long alloc_local, local_n0, local_0_start, i, j;
-
     alloc_local = fftw_mpi_local_size_3d(
         nGrid, nGrid, nGrid, MPI_COMM_WORLD,
         &local_n0, &local_0_start);
 
-    //long* all_local_n0 = new long[np];
+    // Communicate the number of particles in each slab to all processes
     blitz::Array<long,1> all_local_n0(nGrid);
-
     MPI_Allgather(
-        &local_n0,
-        1,
-        MPI_LONG,
-        all_local_n0.data(),
-        1,
-        MPI_LONG,
-        MPI_COMM_WORLD);
+        &local_n0, 1, MPI_LONG, all_local_n0.data(), 1, MPI_LONG, MPI_COMM_WORLD);
 
     blitz::Array<long,1> all_local_0_start(nGrid);
     MPI_Allgather(
-        &local_0_start,
-        1,
-        MPI_LONG,
-        all_local_0_start.data(),
-        1,
-        MPI_LONG,
-        MPI_COMM_WORLD);
+        &local_0_start, 1, MPI_LONG, all_local_0_start.data(), 1, MPI_LONG, MPI_COMM_WORLD);
 
+    // Compute slab to rank mapping
     blitz::Array<int,1> slabToRank(nGrid);
     int current_rank = 0;
-    int total = 0;
     for (int i = 0; i < nGrid; i++) {
-        slabToRank(i) = current_rank;
-        total += all_local_n0(i);
-
-        if (total >= N) {
+        if (current_rank < np-1 && i == all_local_0_start(current_rank+1)) {
             current_rank++;
-            total = 0;
         }
+        slabToRank(i) = current_rank;
     } 
 
+    // Count the number of particles to send to each process
     blitz::Array<int,1> sendcounts(np);
     blitz::Array<int,1> recvcounts(np);
     sendcounts = 0;
@@ -158,23 +143,23 @@ int main(int argc, char *argv[]) {
         sendcounts(slabToRank(slab))++;
     }
 
-    for (int i = 0; i < np; i++) {
-        std::cout << "from " << i << " to " << " send " << sendcounts(i) << std::endl;
-    }
-
-    timer.lap("Counting particles");
-
+    // Communicate the number of particles to send to each process
     MPI_Alltoall(
-        sendcounts.data(),
-        1,
-        MPI_INT,
-        recvcounts.data(),
-        1,
-        MPI_INT,
-        MPI_COMM_WORLD);
+        sendcounts.data(), 1, MPI_INT, recvcounts.data(), 1, MPI_INT, MPI_COMM_WORLD);
+
+    // Find total number of particles for this rank
+
 
     for (int i = 0; i < np; i++) {
-        std::cout << "from " << i << " to " << rank << " rec " << recvcounts(i) << std::endl;
+        if (i == rank) {
+            continue;
+        }
+        if (sendcounts(i) > 0) {
+            std::cout << "Rank " << rank << " sending " << sendcounts(i) << " particles to rank " << i << std::endl;
+        }
+        if (recvcounts(i) > 0) {
+            std::cout << "Rank " << rank << " receiving " << recvcounts(i) << " particles from rank " << i << std::endl;
+        }
     }
 
     GeneralArrayStorage<3> storage;
