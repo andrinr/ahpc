@@ -1,5 +1,5 @@
 #include "blitz/array.h"
-#include <map>
+#include <map> // std::map
 #include <string>
 #include "weights.h"
 #include "helpers.h"
@@ -18,7 +18,9 @@ void assign(
     blitz::Array<float, 2> particles, 
     blitz::Array<float, 3> grid,
     blitz::TinyVector<int, 3> grid_size,
-    std::string method) 
+    std::string method,
+    int rank,
+    int np) 
 {
     std::map<std::string, int> range = {
         { "ngp", 1 },
@@ -60,15 +62,17 @@ void assign(
                     #ifdef _OPENMP
                     #pragma omp atomic
                     #endif
-                    /*grid(
-                        (startX + j + grid.extent(0)) % grid.extent(1), 
-                        (startY + k + grid.extent(1)) % grid.extent(2), 
-                        (startZ + l + grid.extent(2)) % grid.extent(3)) 
-                        += weight * 1.0f;*/
+                    // Check if 
+                    if (startX + j < grid.lbound(0)|| 
+                        startX + j >= grid.extent(0) +  grid.lbound(0)) {
+                        continue;
+                    }
+    
                     grid (
-                        startX + j,
-                        startY + k,
-                        startZ + l) += weight * 1.0f;
+                        startX + j, // Should not go out of bounds
+                        (startY + k + grid_size(1)) % grid_size(1), 
+                        (startZ + l + grid_size(2)) % grid_size(2)) 
+                        += weight * 1.0f;
                 }
             }
         }
@@ -115,8 +119,6 @@ void bin(
     }
     
     int kMax = getK(nGrid/2, nGrid/2, nGrid/2);
-    std::cout << "kMax: " << kMax << std::endl;
-
     for(int i=0; i<nGrid; ++i) {
         for(int j=0; j<nGrid; ++j) {
             for(int l=0; l<nGrid/2; ++l) {
