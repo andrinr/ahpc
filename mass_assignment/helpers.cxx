@@ -10,7 +10,6 @@
 #include <fstream> // std::ifstream
 #include <iostream> // std::cout
 
-
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -44,6 +43,9 @@ void assign(
         float x = (particles(i,0) + 0.5) * grid.extent(0);
         float y = (particles(i,1) + 0.5) * grid.extent(1);
         float z = (particles(i,2) + 0.5) * grid.extent(2);
+
+        //std::cout << "Particle " << i << " at " << x << ", " << y << ", " << z << std::endl;
+        //std::cout << "from " << i << " at " << particles(i,0) << ", " << particles(i,1) << ", " << particles(i,2) << std::endl;
 
         float* weightsX = new float[range[method]];
         float* weightsY = new float[range[method]];
@@ -96,7 +98,8 @@ void project(
 
 void bin(
     blitz::Array<std::complex<float>, 3> grid,
-    blitz::Array<float, 1> bins,
+    blitz::Array<float, 1> fPower,
+    blitz::Array<int, 1> nPower,
     int nBins,
     bool log)
 {
@@ -119,11 +122,6 @@ void bin(
     int kMax = getK(nGrid/2, nGrid/2, nGrid/2);
     std::cout << "kMax: " << kMax << std::endl;
 
-    blitz::Array<float, 1> fPower(nBins);
-    fPower = 0;
-    blitz::Array<int, 1> nPower(nBins);
-    nPower = 0;
-
     for(int i=0; i<nGrid; ++i) {
         for(int j=0; j<nGrid; ++j) {
             for(int l=0; l<nGrid/2; ++l) {
@@ -138,13 +136,6 @@ void bin(
                 nPower(index) += 1;
             }
         }
-    }
-
-    std::cout << "FPower: " << fPower << std::endl;
-    std::cout << "NPower: " << nPower << std::endl;
-
-    for(int i=0; i<nBins; ++i) {
-        bins(i) = fPower(i) / nPower(i);
     }
 }
 

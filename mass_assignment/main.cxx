@@ -9,6 +9,7 @@
 #include <fftw3.h> // FFTW
 #include <mpi.h> // MPI
 #include <fftw3-mpi.h> // MPI FFTW
+#include <assert.h>
 
 #include "comm.h"
 #include "main.h"
@@ -128,10 +129,9 @@ int main(int argc, char *argv[]) {
     MPI_Alltoall(
         sendcounts.data(), 1, MPI_INT, recvcounts.data(), 1, MPI_INT, MPI_COMM_WORLD);
 
+    // Compute send and receive displacements
     blitz::Array<int,1> senddispls(np);
     blitz::Array<int,1> recvdispls(np);
-
-    // Compute send and receive displacements
     senddispls(0) = 0;
     recvdispls(0) = 0;
 
@@ -140,18 +140,31 @@ int main(int argc, char *argv[]) {
         recvdispls(i) = recvdispls(i-1) + recvcounts(i-1);
     }
 
+    std::cout << "Rank " << rank << " sending " << sendcounts << std::endl;
+    std::cout << "Rank " << rank << " receiving " << recvcounts << std::endl;
+    std::cout << "Rank " << rank << " sending from " << senddispls << std::endl;
+    std::cout << "Rank " << rank << " receiving from " << recvdispls << std::endl;
+
     // Find total number of particles for this rank
     int N_particles = blitz::sum(recvcounts);
+    assert(blitz::sum(sendcounts) == N_load);
 
     std::cout << "Rank " << rank << " has " << N_particles << " particles" << std::endl;
     // Allocate memory for particles
     blitz::Array<float,2> particles(N_particles, 3);
+    particles = 0;
 
     // Communicate the particles to each process
     MPI_Alltoallv(
-        particlesUnsorted.data(), sendcounts.data(), senddispls.data(), MPI_FLOAT,
+        particlesUnsorted.data() ,sendcounts.data(), senddispls.data(), MPI_FLOAT,
         particles.data(), recvcounts.data(), recvdispls.data(), MPI_FLOAT,
         MPI_COMM_WORLD);
+
+    for (int i = 0; i < N_particles; i += 1000) {
+        if (particles(i,0) == -1) {
+            std::cout << "Rank " << rank << " has a particle with x = -1 at index " << i << std::endl;
+        }
+    }
     
     timer.lap("Communicating particles");
 
@@ -168,11 +181,12 @@ int main(int argc, char *argv[]) {
     blitz::Array<float,3> grid(
         grid_data, blitz::shape(slab_size, nGrid, nGrid *2), blitz::deleteDataWhenDone, storage);
 
-    std::cout << "grid size: " << grid.lbound() << std::endl;
+ 
     // Create a blitz array that points to the memory without padding
     blitz::Array<float,3> grid_no_pad = grid(blitz::Range::all(), blitz::Range::all(), blitz::Range(0,nGrid-1));
 
-    std::cout << "grid size: " << grid.size() << std::endl;
+    std::cout << "grid lbound: " << grid_no_pad.lbound() << std::endl;
+    std::cout << "grid extent: " << grid_no_pad.extent() << std::endl;
     // Assign the particles to the grid using the given mass assignment method
     assign(particles, grid_no_pad, method);
     
@@ -199,22 +213,34 @@ int main(int argc, char *argv[]) {
     fftwf_execute(plan);
     fftwf_destroy_plan(plan);
 
-    // Create bins for the power spectrum
-    blitz::Array<float,2> bins(2, nBins);
-    bins = 0;
-
-    for (int i=0; i<nBins; ++i) {
-        bins(1,i) = i;
-    }
-
     // Compute bins for the power spectrum
-    blitz::Array<float,1> fPower = bins(0, blitz::Range::all());
-    bin(density, fPower, nBins, logBining);
-    
-    // Output the power spectrum
-    write<float>("power" + std::to_string(N_total), bins);
+    blitz::Array<float, 1> fPower_local(nBins);
+    blitz::Array<float, 1> fPower_global(nBins);
+    fPower_local = 0;
+    blitz::Array<int, 1> nPower_local(nBins);
+    blitz::Array<int, 1> nPower_global(nBins);
+    nPower_local = 0;
 
+    bin(density, fPower_local, nPower_local, nBins, logBining);
     timer.lap("Power spectrum");
+
+    MPI_Reduce(
+        fPower_local.data(), fPower_global.data(), nBins, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    MPI_Reduce(
+        nPower_local.data(), nPower_global.data(), nBins, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    if (rank != 0) {
+        return 0;
+    }
+    
+    // Compute the average power spectrum
+    fPower_global /= nPower_global;
+
+    std::cout << "Average power spectrum: " << fPower_global << std::endl;
+
+    // Output the power spectrum
+    //write<float>("power" + std::to_string(N_total), fPower);
 }
 
 template <typename T> void write(std::string location, blitz::Array<T,2> data) {

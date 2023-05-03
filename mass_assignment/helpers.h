@@ -15,7 +15,8 @@ void project(
 
 void bin(
     blitz::Array<std::complex<float>, 3> grid,
-    blitz::Array<float, 1> bins,
+    blitz::Array<float, 1> fPower,
+    blitz::Array<int, 1> nPower,
     int nBins,
     bool log);
 
