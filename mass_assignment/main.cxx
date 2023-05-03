@@ -15,8 +15,8 @@
 #include "comm.h"
 #include "main.h"
 #include "tipsy.h"
-#include "helpers.h"
 #include "ptimer.h"
+#include "helpers.h"
 #include "blitz/array.h"
 
 #ifdef _OPENMP
@@ -79,7 +79,6 @@ int main(int argc, char *argv[]) {
 
     int upperGhostStart = slabStart;
     int upperGhostEnd = slabStart + nGhostCells;
-
     blitz::Array<float, 2> upperGhostParticles = getGhostParticles(
         particlesUnsorted, upperGhostStart, upperGhostEnd, nGrid, (rank + 1 + np) % np,  rank, np);
 
@@ -87,6 +86,8 @@ int main(int argc, char *argv[]) {
     int lowerGhostEnd = slabStart + nSlabs;
     blitz::Array<float, 2> lowerGhostParticles = getGhostParticles(
         particlesUnsorted, lowerGhostStart, lowerGhostEnd, nGrid, (rank - 1 + np) % np,  rank, np);
+    
+    timer.lap("getting ghost particles");
     
     blitz::GeneralArrayStorage<3> storage;
     storage.ordering() = blitz::firstRank, blitz::secondRank, blitz::thirdRank;
@@ -106,7 +107,7 @@ int main(int argc, char *argv[]) {
     blitz::Array<float,3> grid_no_pad = grid(blitz::Range::all(), blitz::Range::all(), blitz::Range(0,nGrid-1));
 
     // Assign the particles to the grid using the given mass assignment method
-    assign(particles, grid_no_pad, blitz::shape(nGrid, nGrid, nGrid), method);
+    assign(particles, grid_no_pad, blitz::shape(nGrid, nGrid, nGrid), method, rank, np);
     
     assert(int(blitz::sum(grid)) == particles.rows());
     timer.lap("Mass assignment");
@@ -157,142 +158,6 @@ int main(int argc, char *argv[]) {
 
     // Output the power spectrum
     //write<float>("power" + std::to_string(N_total), fPower);
-}
-blitz::Array<float, 2> getGhostParticles(
-    blitz::Array<float, 2> particles, 
-    int nGrid, int regionStart, int regionEnd, int rank, int otherRank, int np
-) {
-
-    int startIndex = particles.rows();
-    int endIndex = 0;
-
-    // We could use a binary search to speed this up ( in some cases)
-    for (int i = 0; i < particles.rows(); i++) {
-        int slab = (particles(i,0) + 0.5) * nGrid;
-        if (slab >= regionEnd) { break; }
-
-        if (slab >= regionStart && slab >= regionEnd) {
-            startIndex = std::min(i, startIndex);
-            endIndex = std::max(i, endIndex);
-        }
-    }
-
-    int nSend = endIndex - startIndex + 1;
-    int nRecv = 0;
-
-    MPI_Send(&nSend, 1, MPI_INT, otherRank, 0, MPI_COMM_WORLD);
-    MPI_Recv(&nRecv, 1, MPI_INT, otherRank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-    // Send the particles to the previous rank
-    blitz::Array<float,2> upperGhostParticles(nSend, 3);
-    MPI_Send(
-        particles.data() + startIndex, nSend * 3, MPI_FLOAT, otherRank, 0, MPI_COMM_WORLD);
-    MPI_Recv(
-        upperGhostParticles.data(), nRecv, MPI_FLOAT, otherRank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-}
-
-blitz::Array<float, 2> reshuffleParticles (
-    blitz::Array<float, 2> particlesUnsorted, 
-    int slabStart, int nSlabs, 
-    int nGrid, int rank, int np) {
-
-    // Communicate the slab sizes and starts to all processes
-    blitz::Array<int,1> nSlabsGlobal(nGrid);
-    MPI_Allgather(
-        &nSlabs, 1, MPI_INT, nSlabsGlobal.data(), 1, MPI_INT, MPI_COMM_WORLD);
-
-    blitz::Array<int,1> slabStartGlobal(nGrid);
-    MPI_Allgather(
-        &slabStart, 1, MPI_INT, slabStartGlobal.data(), 1, MPI_INT, MPI_COMM_WORLD);
-
-    // Compute slab to rank mapping
-    blitz::Array<int,1> slabToRank(nGrid);
-    int current_rank = 0;
-    for (int i = 0; i < nGrid; i++) {
-        if (current_rank < np-1 && i == slabStartGlobal(current_rank+1)) {
-            current_rank++;
-        }
-        slabToRank(i) = current_rank;
-    } 
-
-    // Count the number of particles to send to each process
-    blitz::Array<int,1> sendcounts(np);
-    blitz::Array<int,1> recvcounts(np);
-    sendcounts = 0;
-    recvcounts = 0;
-    int start = particlesUnsorted.lbound(0);
-    int end = particlesUnsorted.extent(0) + start;
-    for (int i = start; i < end; i++) {
-        int slab = floor((particlesUnsorted(i,0)+0.5) * nGrid);
-        int particleRank = slabToRank(slab);
-        sendcounts(slabToRank(slab))++;
-    }
-    // acount for xzy axes
-    sendcounts = sendcounts * 3;
-
-    // Communicate the number of particles to send to each process
-    MPI_Alltoall(
-        sendcounts.data(), 1, MPI_INT, recvcounts.data(), 1, MPI_INT, MPI_COMM_WORLD);
-
-    // Compute send and receive displacements
-    blitz::Array<int,1> senddispls(np);
-    blitz::Array<int,1> recvdispls(np);
-    senddispls(0) = 0;
-    recvdispls(0) = 0;
-
-    for (int i = 1; i < np; i++) {
-        senddispls(i) = senddispls(i-1) + sendcounts(i-1);
-        recvdispls(i) = recvdispls(i-1) + recvcounts(i-1);
-    }
-
-    // Find total number of particles for this rank
-    int N_particles = blitz::sum(recvcounts) / 3;
-
-    // Allocate memory for particles
-    blitz::Array<float,2> particles(N_particles, 3);
-    particles = 0;
-
-    // Communicate the particles to each process
-    MPI_Alltoallv(
-        particlesUnsorted.data(), sendcounts.data(), senddispls.data(), MPI_FLOAT,
-        particles.data(), recvcounts.data(), recvdispls.data(), MPI_FLOAT,
-        MPI_COMM_WORLD);
-
-    return particles;
-}
-
-blitz::Array<float, 2> loadParticles(std::string location, int rank, int np) {
-    TipsyIO io;
-    io.open(location);
-    if (io.fail()) {
-        std::cerr << "Unable to open tipsy file " << location << std::endl;
-    }
-
-    // Load particle positions
-    std::uint64_t N_total = io.count();
-
-    int N_load = floor(((float)N_total + np - 1) / np);
-
-    // Handle odd number of particles
-    if (rank == np-1) {
-        N_load = N_total - (np-1) * N_load;
-    }
-
-    // Handle more processes than particles
-    if (N_load == 0) {
-        throw std::runtime_error("More processes than particles");
-    }
-
-    int i_start_load = rank * N_load;
-    int i_end_load = (rank+1) * N_load;
-
-    blitz::TinyVector<int, 2> lBound(i_start_load, 0);
-    blitz::TinyVector<int, 2> extent(N_load, 3);
-
-    blitz::Array<float,2> particlesUnsorted(lBound, extent);
-    io.load(particlesUnsorted);
-
-    return particlesUnsorted;
 }
 
 template <typename T> void write(std::string location, blitz::Array<T,2> data) {

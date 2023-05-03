@@ -8,7 +8,9 @@ void assign(
     blitz::Array<float, 2> particles, 
     blitz::Array<float, 3> grid,
     blitz::TinyVector<int, 3> grid_size,
-    std::string method);
+    std::string method,
+    int rank,
+    int np);
 
 void project(
     blitz::Array<float, 3> grid_3d,
@@ -27,6 +29,18 @@ int getK(
 int getIndex (int k, int kmax, int nBins, bool log);
 
 void sortParticles(blitz::Array<float, 2> particles);
+
+blitz::Array<float, 2> getGhostParticles(
+    blitz::Array<float, 2> particles, 
+    int nGrid, int regionStart, int regionEnd, int rank, int otherRank, int np
+);
+
+blitz::Array<float, 2> reshuffleParticles (
+    blitz::Array<float, 2> particlesUnsorted, 
+    int slabStart, int nSlabs, 
+    int nGrid, int rank, int np);
+
+blitz::Array<float, 2> loadParticles(std::string location, int rank, int np);
 
 #endif // HELPERS_H_INCLUDED
 
