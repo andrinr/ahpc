@@ -7,6 +7,7 @@
 void assign(
     blitz::Array<float, 2> particles, 
     blitz::Array<float, 3> grid,
+    blitz::TinyVector<int, 3> grid_size,
     std::string method);
 
 void project(

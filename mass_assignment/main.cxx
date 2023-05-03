@@ -125,6 +125,8 @@ int main(int argc, char *argv[]) {
         sendcounts(slabToRank(slab))++;
     }
 
+    sendcounts = sendcounts * 3;
+
     // Communicate the number of particles to send to each process
     MPI_Alltoall(
         sendcounts.data(), 1, MPI_INT, recvcounts.data(), 1, MPI_INT, MPI_COMM_WORLD);
@@ -146,8 +148,7 @@ int main(int argc, char *argv[]) {
     std::cout << "Rank " << rank << " receiving from " << recvdispls << std::endl;
 
     // Find total number of particles for this rank
-    int N_particles = blitz::sum(recvcounts);
-    assert(blitz::sum(sendcounts) == N_load);
+    int N_particles = blitz::sum(recvcounts) / 3;
 
     std::cout << "Rank " << rank << " has " << N_particles << " particles" << std::endl;
     // Allocate memory for particles
@@ -159,12 +160,6 @@ int main(int argc, char *argv[]) {
         particlesUnsorted.data() ,sendcounts.data(), senddispls.data(), MPI_FLOAT,
         particles.data(), recvcounts.data(), recvdispls.data(), MPI_FLOAT,
         MPI_COMM_WORLD);
-
-    for (int i = 0; i < N_particles; i += 1000) {
-        if (particles(i,0) == -1) {
-            std::cout << "Rank " << rank << " has a particle with x = -1 at index " << i << std::endl;
-        }
-    }
     
     timer.lap("Communicating particles");
 
@@ -180,18 +175,18 @@ int main(int argc, char *argv[]) {
     // Create a blitz array that points to the memory
     blitz::Array<float,3> grid(
         grid_data, blitz::shape(slab_size, nGrid, nGrid *2), blitz::deleteDataWhenDone, storage);
-
+    grid = 0;
  
     // Create a blitz array that points to the memory without padding
     blitz::Array<float,3> grid_no_pad = grid(blitz::Range::all(), blitz::Range::all(), blitz::Range(0,nGrid-1));
 
-    std::cout << "grid lbound: " << grid_no_pad.lbound() << std::endl;
-    std::cout << "grid extent: " << grid_no_pad.extent() << std::endl;
+    std::cout << "Rank " << rank << " grid lbound: " << grid_no_pad.lbound() << std::endl;
+    std::cout << "Rank " << rank << " grid extent: " << grid_no_pad.extent() << std::endl;
     // Assign the particles to the grid using the given mass assignment method
-    assign(particles, grid_no_pad, method);
+    assign(particles, grid_no_pad, blitz::shape(nGrid, nGrid, nGrid), method);
     
     float sum = blitz::sum(grid);
-    std::cout << "Sum of all particles before reduction: " << sum << std::endl;
+    assert(int(sum) == N_particles);
 
     timer.lap("Mass assignment");
 
