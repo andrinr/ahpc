@@ -77,18 +77,21 @@ int main(int argc, char *argv[]) {
     };
     int nGhostCells = nGhost[method];
 
-    int upperGhostStart = slabStart;
-    int upperGhostEnd = slabStart + nGhostCells;
-    blitz::Array<float, 2> upperGhostParticles = getGhostParticles(
-        particlesUnsorted, upperGhostStart, upperGhostEnd, nGrid, (rank + 1 + np) % np,  rank, np);
+    if (nGhostCells > 0) {
+        
+        int upperGhostStart = slabStart;
+        int upperGhostEnd = slabStart + nGhostCells;
+        blitz::Array<float, 2> upperGhostParticles = getGhostParticles(
+            particlesUnsorted, nGrid, upperGhostStart, upperGhostEnd, rank, (rank + 1 + np) % np, np);
 
-    int lowerGhostStart = slabStart + nSlabs - nGhostCells;
-    int lowerGhostEnd = slabStart + nSlabs;
-    blitz::Array<float, 2> lowerGhostParticles = getGhostParticles(
-        particlesUnsorted, lowerGhostStart, lowerGhostEnd, nGrid, (rank - 1 + np) % np,  rank, np);
-    
-    timer.lap("getting ghost particles");
-    
+        int lowerGhostStart = slabStart + nSlabs - nGhostCells;
+        int lowerGhostEnd = slabStart + nSlabs;
+        blitz::Array<float, 2> lowerGhostParticles = getGhostParticles(
+            particlesUnsorted, nGrid, lowerGhostStart, lowerGhostEnd, rank, (rank - 1 + np) % np, np);
+        
+        timer.lap("getting ghost particles");
+    }
+
     blitz::GeneralArrayStorage<3> storage;
     storage.ordering() = blitz::firstRank, blitz::secondRank, blitz::thirdRank;
     storage.base() = slabStart, 0, 0;

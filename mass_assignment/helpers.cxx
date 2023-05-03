@@ -178,9 +178,14 @@ blitz::Array<float, 2> getGhostParticles(
     int startIndex = particles.rows();
     int endIndex = 0;
 
+    std::cout << "regionStart: " << regionStart << std::endl;
+    std::cout << "regionEnd: " << regionEnd << std::endl;
+
     // We could use a binary search to speed this up ( in some cases)
     for (int i = 0; i < particles.rows(); i++) {
         int slab = (particles(i,0) + 0.5) * nGrid;
+        //std::cout << slab << " i " << i << "startIndex " << startIndex << " endIndex " << endIndex << std::endl;
+
         if (slab >= regionEnd) { break; }
 
         if (slab >= regionStart && slab >= regionEnd) {
@@ -188,19 +193,29 @@ blitz::Array<float, 2> getGhostParticles(
             endIndex = std::max(i, endIndex);
         }
     }
+    std::cout << "startIndex: " << startIndex << std::endl;
+    std::cout << "endIndex: " << endIndex << std::endl;
 
     int nSend = endIndex - startIndex + 1;
     int nRecv = 0;
 
-    MPI_Send(&nSend, 1, MPI_INT, otherRank, 0, MPI_COMM_WORLD);
-    MPI_Recv(&nRecv, 1, MPI_INT, otherRank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Request sendRequestN, recvRequestN, sendRequestP, recvRequestP;
+
+    MPI_Isend(&nSend, 1, MPI_INT, otherRank, 0, MPI_COMM_WORLD, &sendRequestN);
+    MPI_Irecv(&nRecv, 1, MPI_INT, otherRank, 0, MPI_COMM_WORLD, &recvRequestN);
+
+    MPI_Wait(&sendRequestN, MPI_STATUS_IGNORE);
+    MPI_Wait(&recvRequestN, MPI_STATUS_IGNORE);
 
     // Send the particles to the previous rank
     blitz::Array<float,2> ghostParticles(nSend, 3);
-    MPI_Send(
-        particles.data() + startIndex, nSend * 3, MPI_FLOAT, otherRank, 0, MPI_COMM_WORLD);
-    MPI_Recv(
-        ghostParticles.data(), nRecv, MPI_FLOAT, otherRank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Isend(
+        particles.data() + startIndex, nSend * 3, MPI_FLOAT, otherRank, 0, MPI_COMM_WORLD, &sendRequestP);
+    MPI_Irecv(
+        ghostParticles.data(), nRecv, MPI_FLOAT, otherRank, 0, MPI_COMM_WORLD, &recvRequestP);
+
+    MPI_Wait(&sendRequestP, MPI_STATUS_IGNORE);
+    MPI_Wait(&recvRequestP, MPI_STATUS_IGNORE);
 
     return ghostParticles;
 }
