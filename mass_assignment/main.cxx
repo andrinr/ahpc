@@ -68,7 +68,9 @@ int main(int argc, char *argv[]) {
         reshuffleParticles(particlesUnsorted, slabStart, nSlabs,  nGrid, rank, np);
     timer.lap("reshuffling particles");
 
-    // Determine the number of ghost cells in each direction
+    std::cout << "rank " << rank << " has " << particles.rows() << " particles" << std::endl;
+
+    // Determine the number of ghost cells
     std::map<std::string, int> nGhost = {
         { "ngp", 0 },
         { "cic", 1 },
@@ -77,61 +79,156 @@ int main(int argc, char *argv[]) {
     };
     int nGhostCells = nGhost[method];
 
-    if (nGhostCells > 0) {
-        
-        int upperGhostStart = slabStart;
-        int upperGhostEnd = slabStart + nGhostCells;
-        blitz::Array<float, 2> upperGhostParticles = getGhostParticles(
-            particlesUnsorted, nGrid, upperGhostStart, upperGhostEnd, rank, (rank + 1 + np) % np, np);
-
-        int lowerGhostStart = slabStart + nSlabs - nGhostCells;
-        int lowerGhostEnd = slabStart + nSlabs;
-        blitz::Array<float, 2> lowerGhostParticles = getGhostParticles(
-            particlesUnsorted, nGrid, lowerGhostStart, lowerGhostEnd, rank, (rank - 1 + np) % np, np);
-        
-        timer.lap("getting ghost particles");
-    }
-
-    blitz::GeneralArrayStorage<3> storage;
-    storage.ordering() = blitz::firstRank, blitz::secondRank, blitz::thirdRank;
-    storage.base() = slabStart, 0, 0;
+    std::cout << "rank " << rank << " has " << nGhostCells << " ghost cells" << std::endl;
 
     // Create Mass Assignment Grid with padding for fft
     typedef std::complex<float> cplx;
-    int mem_size = nSlabs * nGrid * (nGrid+2);
-    float *grid_data = new (std::align_val_t(64)) float[mem_size];
+    int gridMemorySize = (nSlabs+nGhostCells*2) * nGrid * (nGrid+2);
+    float *gridData = new (std::align_val_t(64)) float[gridMemorySize];
 
     // Create a blitz array that points to the memory
+    blitz::GeneralArrayStorage<3> gridStorageLayout;
+    gridStorageLayout.ordering() = blitz::firstRank, blitz::secondRank, blitz::thirdRank;
+    gridStorageLayout.base() = slabStart, 0, 0;
     blitz::Array<float,3> grid(
-        grid_data, blitz::shape(nSlabs, nGrid, nGrid *2), blitz::deleteDataWhenDone, storage);
+        gridData, blitz::shape((nSlabs+nGhostCells*2), nGrid, nGrid+2), blitz::deleteDataWhenDone, gridStorageLayout);
     grid = 0;
- 
-    // Create a blitz array that points to the memory without padding
-    blitz::Array<float,3> grid_no_pad = grid(blitz::Range::all(), blitz::Range::all(), blitz::Range(0,nGrid-1));
+    blitz::Array<float,3> gridNoPad = grid(blitz::Range::all(), blitz::Range::all(), blitz::Range(0,nGrid-1));
 
     // Assign the particles to the grid using the given mass assignment method
-    assign(particles, grid_no_pad, blitz::shape(nGrid, nGrid, nGrid), method, rank, np);
+    assign(particles, gridNoPad, blitz::shape(nGrid, nGrid, nGrid), method, rank, np);
     
-    assert(int(blitz::sum(grid)) == particles.rows());
+    //assert(int(blitz::sum(grid)) == particles.rows());
     timer.lap("Mass assignment");
 
-    // Get overdensity
+    blitz::Array<float, 3> ghostRegion(nGhostCells, nGrid, nGrid);
+
+    int dimensions_full_array[3] = {nSlabs + nGhostCells * 2, nGrid, nGrid + 2};
+    int dimensions_subarray[3] = {nGhostCells, nGrid, nGrid};
+    int start_coordinates[3] = {0, 0, 0};
+    MPI_Datatype upperGhostType;
+    MPI_Type_create_subarray(
+        3, 
+        dimensions_full_array, 
+        dimensions_subarray,
+        start_coordinates,
+        MPI_ORDER_C, 
+        MPI_FLOAT, 
+        &upperGhostType);
+    MPI_Type_commit(&upperGhostType);
+
+    std::cout << "created subarray type " << std::endl;
+    /*
+    MPI_Datatype upperReceive;
+    MPI_Type_create_subarray(
+        3, 
+        grid.extent().data(),
+        blitz::shape(nGhostCells, nGrid, nGrid).data(), 
+        blitz::shape(nGhostCells, 0, 0).data(),
+        MPI_ORDER_C, 
+        MPI_FLOAT, 
+        &upperReceive);
+
+    MPI_Request upperSendRequest;
+    MPI_Isend(
+        grid.data(), 
+        1, 
+        upperGhostType, 
+        comm.up(), 
+        0, 
+        MPI_COMM_WORLD, 
+        &upperSendRequest);
+
+    MPI_Request upperReceiveRequest;
+    MPI_Irecv(
+        ghostRegion.data(), 
+        1, 
+        upperReceive, 
+        comm.up(), 
+        0, 
+        MPI_COMM_WORLD, 
+        &upperReceiveRequest);
+
+    MPI_Wait(&upperSendRequest, MPI_STATUS_IGNORE);
+    MPI_Wait(&upperReceiveRequest, MPI_STATUS_IGNORE);
+
+    // Add the upper ghost region to the grid
+    grid(blitz::Range(nGhostCells,nGhostCells*2), blitz::Range::all(), blitz::Range::all()) += ghostRegion;
+
+    MPI_Datatype lowerGhost;
+    MPI_Type_create_subarray(
+        3, 
+        grid.extent().data(),
+        blitz::shape(nGhostCells, nGrid, nGrid).data(), 
+        blitz::shape(nSlabs + nGhostCells, 0, 0).data(),
+        MPI_ORDER_C, 
+        MPI_FLOAT, 
+        &lowerGhost);
+
+    MPI_Datatype lowerReceive;
+    MPI_Type_create_subarray(
+        3, 
+        grid.extent().data(),
+        blitz::shape(nGhostCells, nGrid, nGrid).data(), 
+        blitz::shape(nSlabs, 0, 0).data(),
+        MPI_ORDER_C, 
+        MPI_FLOAT, 
+        &lowerReceive);
+
+    MPI_Request lowerSendRequest;
+    MPI_Isend(
+        grid.data(), 
+        1, 
+        lowerGhost, 
+        comm.down(), 
+        0, 
+        MPI_COMM_WORLD, 
+        &lowerSendRequest);
+
+    MPI_Request lowerReceiveRequest;
+    MPI_Irecv(
+        ghostRegion.data(), 
+        1, 
+        lowerReceive, 
+        comm.down(), 
+        0, 
+        MPI_COMM_WORLD, 
+        &lowerReceiveRequest);
+
+    MPI_Wait(&upperSendRequest, MPI_STATUS_IGNORE);
+    MPI_Wait(&upperReceiveRequest, MPI_STATUS_IGNORE);*/
+
+    // Add the lower ghost region to the grid
+    grid(blitz::Range(nSlabs-nGhostCells, nSlabs), blitz::Range::all(), blitz::Range::all()) += ghostRegion;
+
+    blitz::Array<float, 3> gridNoGhost = grid(blitz::Range(nGhostCells, nGhostCells+nSlabs-1), blitz::Range::all(), blitz::Range::all());
+    std::cout << "rank " << rank << " has " << gridNoGhost.size() << " size. Should be " << nGrid * nGrid * nGrid << std::endl;
+    timer.lap("reducing ghost regions");
+
     float mean = blitz::mean(grid);
-    grid_no_pad -= mean;
-    grid_no_pad /= mean;
-    
+    grid -= mean;
+    grid /= mean;
+
+    std::cout << "rank " << rank << " has " << gridNoGhost.rows() << " slabs" << std::endl;
+
     // Prepare memory to compute the FFT of the 3D grid
-    cplx *memory_density_grid = reinterpret_cast <cplx*>( grid_data );
-    blitz::TinyVector<int, 3> density_grid_shape(nGrid, nGrid, nGrid/2+1);
-    blitz::Array<cplx,3> density(memory_density_grid, density_grid_shape, blitz::neverDeleteData);
-    
+    cplx *memory_density_grid = reinterpret_cast <cplx*>( gridNoGhost.data() );
     // Compute the FFT of the grid
     fftwf_plan plan = fftwf_mpi_plan_dft_r2c_3d(
-        nGrid, nGrid, nGrid, grid_data, (fftwf_complex*) memory_density_grid, 
+        nGrid, nGrid, nGrid, gridNoGhost.data(), (fftwf_complex*) memory_density_grid, 
         MPI_COMM_WORLD, FFTW_ESTIMATE);
 
     fftwf_execute(plan);
     fftwf_destroy_plan(plan);
+
+    timer.lap("3d FFT");
+
+    // Create blitz array that wraps around the result of the FFT
+    blitz::TinyVector<int, 3> density_grid_shape(nGrid, nGrid, nGrid/2+1);
+    blitz::GeneralArrayStorage<3> densityStorageLayout;
+    densityStorageLayout.ordering() = blitz::firstRank, blitz::secondRank, blitz::thirdRank;
+    densityStorageLayout.base() = slabStart, 0, 0;
+    blitz::Array<cplx,3> density(memory_density_grid, density_grid_shape, blitz::neverDeleteData, densityStorageLayout);
 
     // Compute bins for the power spectrum
     blitz::Array<float, 1> fPower_local(nBins);
@@ -141,7 +238,7 @@ int main(int argc, char *argv[]) {
     blitz::Array<int, 1> nPower_global(nBins);
     nPower_local = 0;
 
-    bin(density, fPower_local, nPower_local, nBins, log);
+    bin(density, blitz::shape(nGrid, nGrid, nGrid), fPower_local, nPower_local, nBins, log);
     timer.lap("Power spectrum");
 
     MPI_Reduce(

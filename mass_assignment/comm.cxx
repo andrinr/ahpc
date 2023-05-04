@@ -28,3 +28,11 @@ Communicator::Communicator() {
 Communicator::~Communicator() {
     MPI_Finalize();
 }
+
+int Communicator::up() {
+   return (rank+1 + np)%np;
+}
+
+int Communicator::down() {
+   return (rank-1 + np)%np;
+}

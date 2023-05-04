@@ -70,7 +70,6 @@ void assign(
                         startX + j >= grid.extent(0) +  grid.lbound(0)) {
                         continue;
                     }
-    
                     grid (
                         startX + j, // Should not go out of bounds
                         (startY + k + grid_size(1)) % grid_size(1), 
@@ -100,12 +99,14 @@ void project(
 
 void bin(
     blitz::Array<std::complex<float>, 3> grid,
+    blitz::TinyVector<int, 3> grid_size,
     blitz::Array<float, 1> fPower,
     blitz::Array<int, 1> nPower,
     int nBins,
     bool log)
 {
-    int nGrid = grid.extent(0);
+    int nGrid = grid_size(0);
+
     blitz::Array<float, 1> kx(nGrid);
     blitz::Array<float, 1> ky(nGrid);
     blitz::Array<float, 1> kz(nGrid/2 + 1);
@@ -122,9 +123,11 @@ void bin(
     }
     
     int kMax = getK(nGrid/2, nGrid/2, nGrid/2);
-    for(int i=0; i<nGrid; ++i) {
-        for(int j=0; j<nGrid; ++j) {
-            for(int l=0; l<nGrid/2; ++l) {
+    for(int i=grid.lbound(0); i<grid.lbound(0) + grid.extent(0); ++i) {
+        for(int j=grid.lbound(1); j<grid.lbound(1) + grid.extent(1); ++j) {
+            for(int l=grid.lbound(2); l<grid.lbound(2) + grid.extent(2); ++l) {
+
+                std::cout << i << " " << j << " " << l << std::endl;
                 int k = getK(kx(i), ky(j), kz(l));
                 int index = getIndex(k, kMax, nBins, log);
            
@@ -167,57 +170,6 @@ void sortParticles(blitz::Array<float, 2> particles) {
             return a.x < b.x;
         }
     );
-}
-
-
-blitz::Array<float, 2> getGhostParticles(
-    blitz::Array<float, 2> particles, 
-    int nGrid, int regionStart, int regionEnd, int rank, int otherRank, int np
-) {
-
-    int startIndex = particles.rows();
-    int endIndex = 0;
-
-    std::cout << "regionStart: " << regionStart << std::endl;
-    std::cout << "regionEnd: " << regionEnd << std::endl;
-
-    // We could use a binary search to speed this up ( in some cases)
-    for (int i = 0; i < particles.rows(); i++) {
-        int slab = (particles(i,0) + 0.5) * nGrid;
-        //std::cout << slab << " i " << i << "startIndex " << startIndex << " endIndex " << endIndex << std::endl;
-
-        if (slab >= regionEnd) { break; }
-
-        if (slab >= regionStart && slab >= regionEnd) {
-            startIndex = std::min(i, startIndex);
-            endIndex = std::max(i, endIndex);
-        }
-    }
-    std::cout << "startIndex: " << startIndex << std::endl;
-    std::cout << "endIndex: " << endIndex << std::endl;
-
-    int nSend = endIndex - startIndex + 1;
-    int nRecv = 0;
-
-    MPI_Request sendRequestN, recvRequestN, sendRequestP, recvRequestP;
-
-    MPI_Isend(&nSend, 1, MPI_INT, otherRank, 0, MPI_COMM_WORLD, &sendRequestN);
-    MPI_Irecv(&nRecv, 1, MPI_INT, otherRank, 0, MPI_COMM_WORLD, &recvRequestN);
-
-    MPI_Wait(&sendRequestN, MPI_STATUS_IGNORE);
-    MPI_Wait(&recvRequestN, MPI_STATUS_IGNORE);
-
-    // Send the particles to the previous rank
-    blitz::Array<float,2> ghostParticles(nSend, 3);
-    MPI_Isend(
-        particles.data() + startIndex, nSend * 3, MPI_FLOAT, otherRank, 0, MPI_COMM_WORLD, &sendRequestP);
-    MPI_Irecv(
-        ghostParticles.data(), nRecv, MPI_FLOAT, otherRank, 0, MPI_COMM_WORLD, &recvRequestP);
-
-    MPI_Wait(&sendRequestP, MPI_STATUS_IGNORE);
-    MPI_Wait(&recvRequestP, MPI_STATUS_IGNORE);
-
-    return ghostParticles;
 }
 
 blitz::Array<float, 2> reshuffleParticles (

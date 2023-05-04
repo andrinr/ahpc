@@ -6,6 +6,8 @@ public:
     int np, rank;
     Communicator();
     ~Communicator();
+    int up();
+    int down();
 
 private:
     int errs;

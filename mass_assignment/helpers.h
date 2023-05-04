@@ -18,6 +18,7 @@ void project(
 
 void bin(
     blitz::Array<std::complex<float>, 3> grid,
+    blitz::TinyVector<int, 3> grid_size,
     blitz::Array<float, 1> fPower,
     blitz::Array<int, 1> nPower,
     int nBins,
@@ -29,11 +30,6 @@ int getK(
 int getIndex (int k, int kmax, int nBins, bool log);
 
 void sortParticles(blitz::Array<float, 2> particles);
-
-blitz::Array<float, 2> getGhostParticles(
-    blitz::Array<float, 2> particles, 
-    int nGrid, int regionStart, int regionEnd, int rank, int otherRank, int np
-);
 
 blitz::Array<float, 2> reshuffleParticles (
     blitz::Array<float, 2> particlesUnsorted, 
