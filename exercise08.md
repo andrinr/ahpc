@@ -31,7 +31,7 @@ Look at the function `bin` in [helpers.cxx](mass_assignment/src/main.cxx).
 
 ## Task 8
 
-I have tried to solve this as seen in [main.cxx](mass_assignment/src/main.cxx).
-I use the approach where I do not initially change the particle distribution amog the processes but rather I just "reduce" the ghost cells among the processors and then continue with a grid witout the ghost cells.
+The implementation I used differs a bit from the one explained in the lectures. It uses non blocking I send and I recv to "reduce" the ghost regions in the corresponding cells. The advantage is that is simpler and still very efficent as it takes only a around 20ms on my machine. There is a slight data overhead as I create additional arrays to temporarily store the data. The implementation can be found in [main.cxx](mass_assignment/src/main.cxx).
 
-However I got stuck while creating the mpi custom data lauyouts.
+
+Note that with my current implementation there is a segfault error, which unfortunately i could not trace down in time. I will try to fix it for the next deadline.
