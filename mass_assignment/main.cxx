@@ -110,10 +110,7 @@ int main(int argc, char *argv[]) {
         int dimensions_full_array[3] = {nSlabs + nGhostCells * 2, nGrid, nGrid + 2};
         int dimensions_subarray[3] = {nGhostCells, nGrid, nGrid};
 
-        std::cout << "full array dimensions: " << dimensions_full_array[0] << " " << dimensions_full_array[1] << " " << dimensions_full_array[2] << std::endl;
-        std::cout << "subarray dimensions: " << dimensions_subarray[0] << " " << dimensions_subarray[1] << " " << dimensions_subarray[2] << std::endl;
         int start_coordinates_upper_send[3] = {0, 0, 0};
-        std::cout << "start coordinates upper send: " << start_coordinates_upper_send[0] << " " << start_coordinates_upper_send[1] << " " << start_coordinates_upper_send[2] << std::endl;
         MPI_Datatype upperGhostType;
         MPI_Type_create_subarray(
             3, 
@@ -126,7 +123,6 @@ int main(int argc, char *argv[]) {
         MPI_Type_commit(&upperGhostType);
 
         int start_coordinates_upper_recv[3] = {nGhostCells, 0, 0};
-        std::cout << "start coordinates upper recv: " << start_coordinates_upper_recv[0] << " " << start_coordinates_upper_recv[1] << " " << start_coordinates_upper_recv[2] << std::endl;
         MPI_Datatype upperReceive;
         MPI_Type_create_subarray(
             3, 
@@ -139,7 +135,6 @@ int main(int argc, char *argv[]) {
         MPI_Type_commit(&upperReceive);
 
         int start_coordinates_lower_send[3] = {nSlabs-1 + nGhostCells, 0, 0};
-        std::cout << "start coordinates lower send: " << start_coordinates_lower_send[0] << " " << start_coordinates_lower_send[1] << " " << start_coordinates_lower_send[2] << std::endl;
         MPI_Datatype lowerGhost;
         MPI_Type_create_subarray(
             3, 
@@ -152,7 +147,6 @@ int main(int argc, char *argv[]) {
         MPI_Type_commit(&lowerGhost);
 
         int start_coordinates_lower_recv[3] = {nSlabs-1, 0, 0};
-        std::cout << "start coordinates lower recv: " << start_coordinates_lower_recv[0] << " " << start_coordinates_lower_recv[1] << " " << start_coordinates_lower_recv[2] << std::endl;
         MPI_Datatype lowerReceive;
         MPI_Type_create_subarray(
             3, 
@@ -177,8 +171,8 @@ int main(int argc, char *argv[]) {
         MPI_Request upperReceiveRequest;
         MPI_Irecv(
             upperGhostRegion.data(), 
-            1, 
-            upperReceive, 
+            nGhostCells * nGrid * nGrid,
+            MPI_FLOAT, 
             comm.up(), 
             0, 
             MPI_COMM_WORLD, 
@@ -197,8 +191,8 @@ int main(int argc, char *argv[]) {
         MPI_Request lowerReceiveRequest;
         MPI_Irecv(
             lowerGhostRegion.data(), 
-            1, 
-            lowerReceive, 
+            nGhostCells * nGrid * nGrid,
+            MPI_FLOAT, 
             comm.down(), 
             0, 
             MPI_COMM_WORLD, 
@@ -208,14 +202,13 @@ int main(int argc, char *argv[]) {
         MPI_Wait(&upperReceiveRequest, MPI_STATUS_IGNORE);
         MPI_Wait(&upperSendRequest, MPI_STATUS_IGNORE);
         MPI_Wait(&upperReceiveRequest, MPI_STATUS_IGNORE);
-
-        timer.lap("reducing ghost regions");
-
         // Add the upper ghost region to the grid
         grid(blitz::Range(nGhostCells,nGhostCells*2), blitz::Range::all(), blitz::Range::all()) += upperGhostRegion;
 
         // Add the lower ghost region to the grid
         grid(blitz::Range(nSlabs, nSlabs+nGhostCells), blitz::Range::all(), blitz::Range::all()) += lowerGhostRegion;
+
+        timer.lap("reducing ghost regions");
     }
 
     // We can remove the ghost region and the grid still remains contiguous (due to x axis being the primary axis in the data layout)
