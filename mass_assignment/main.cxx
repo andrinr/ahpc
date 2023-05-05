@@ -118,7 +118,7 @@ int main(int argc, char *argv[]) {
     MPI_Type_commit(&upperGhostType);
 
     std::cout << "created subarray type " << std::endl;
-    /*
+    
     MPI_Datatype upperReceive;
     MPI_Type_create_subarray(
         3, 
@@ -196,7 +196,7 @@ int main(int argc, char *argv[]) {
         &lowerReceiveRequest);
 
     MPI_Wait(&upperSendRequest, MPI_STATUS_IGNORE);
-    MPI_Wait(&upperReceiveRequest, MPI_STATUS_IGNORE);*/
+    MPI_Wait(&upperReceiveRequest, MPI_STATUS_IGNORE);
 
     // Add the lower ghost region to the grid
     grid(blitz::Range(nSlabs-nGhostCells, nSlabs), blitz::Range::all(), blitz::Range::all()) += ghostRegion;
