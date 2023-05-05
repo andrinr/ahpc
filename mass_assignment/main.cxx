@@ -104,6 +104,8 @@ int main(int argc, char *argv[]) {
     if (nGhostCells > 0) {
         blitz::Array<float, 3> upperGhostRegion(nGhostCells, nGrid, nGrid);
         blitz::Array<float, 3> lowerGhostRegion(nGhostCells, nGrid, nGrid);
+        upperGhostRegion = 0;
+        lowerGhostRegion = 0;
 
         int dimensions_full_array[3] = {nSlabs + nGhostCells * 2, nGrid, nGrid + 2};
         int dimensions_subarray[3] = {nGhostCells, nGrid, nGrid};
@@ -111,6 +113,7 @@ int main(int argc, char *argv[]) {
         std::cout << "full array dimensions: " << dimensions_full_array[0] << " " << dimensions_full_array[1] << " " << dimensions_full_array[2] << std::endl;
         std::cout << "subarray dimensions: " << dimensions_subarray[0] << " " << dimensions_subarray[1] << " " << dimensions_subarray[2] << std::endl;
         int start_coordinates_upper_send[3] = {0, 0, 0};
+        std::cout << "start coordinates upper send: " << start_coordinates_upper_send[0] << " " << start_coordinates_upper_send[1] << " " << start_coordinates_upper_send[2] << std::endl;
         MPI_Datatype upperGhostType;
         MPI_Type_create_subarray(
             3, 
@@ -123,6 +126,7 @@ int main(int argc, char *argv[]) {
         MPI_Type_commit(&upperGhostType);
 
         int start_coordinates_upper_recv[3] = {nGhostCells, 0, 0};
+        std::cout << "start coordinates upper recv: " << start_coordinates_upper_recv[0] << " " << start_coordinates_upper_recv[1] << " " << start_coordinates_upper_recv[2] << std::endl;
         MPI_Datatype upperReceive;
         MPI_Type_create_subarray(
             3, 
@@ -134,7 +138,8 @@ int main(int argc, char *argv[]) {
             &upperReceive);
         MPI_Type_commit(&upperReceive);
 
-        int start_coordinates_lower_send[3] = {nSlabs + nGhostCells, 0, 0};
+        int start_coordinates_lower_send[3] = {nSlabs-1 + nGhostCells, 0, 0};
+        std::cout << "start coordinates lower send: " << start_coordinates_lower_send[0] << " " << start_coordinates_lower_send[1] << " " << start_coordinates_lower_send[2] << std::endl;
         MPI_Datatype lowerGhost;
         MPI_Type_create_subarray(
             3, 
@@ -146,7 +151,8 @@ int main(int argc, char *argv[]) {
             &lowerGhost);
         MPI_Type_commit(&lowerGhost);
 
-        int start_coordinates_lower_recv[3] = {nSlabs, 0, 0};
+        int start_coordinates_lower_recv[3] = {nSlabs-1, 0, 0};
+        std::cout << "start coordinates lower recv: " << start_coordinates_lower_recv[0] << " " << start_coordinates_lower_recv[1] << " " << start_coordinates_lower_recv[2] << std::endl;
         MPI_Datatype lowerReceive;
         MPI_Type_create_subarray(
             3, 
@@ -157,26 +163,6 @@ int main(int argc, char *argv[]) {
             MPI_FLOAT, 
             &lowerReceive);
         MPI_Type_commit(&lowerReceive);
-
-        MPI_Request lowerSendRequest;
-        MPI_Isend(
-            grid.data(), 
-            1, 
-            lowerGhost, 
-            comm.down(), 
-            0, 
-            MPI_COMM_WORLD, 
-            &lowerSendRequest);
-
-        MPI_Request lowerReceiveRequest;
-        MPI_Irecv(
-            lowerGhostRegion.data(), 
-            1, 
-            lowerReceive, 
-            comm.down(), 
-            0, 
-            MPI_COMM_WORLD, 
-            &lowerReceiveRequest);
 
         MPI_Request upperSendRequest;
         MPI_Isend(
@@ -197,6 +183,26 @@ int main(int argc, char *argv[]) {
             0, 
             MPI_COMM_WORLD, 
             &upperReceiveRequest);
+
+        MPI_Request lowerSendRequest;
+        MPI_Isend(
+            grid.data(), 
+            1, 
+            lowerGhost, 
+            comm.down(), 
+            0, 
+            MPI_COMM_WORLD, 
+            &lowerSendRequest);
+
+        MPI_Request lowerReceiveRequest;
+        MPI_Irecv(
+            lowerGhostRegion.data(), 
+            1, 
+            lowerReceive, 
+            comm.down(), 
+            0, 
+            MPI_COMM_WORLD, 
+            &lowerReceiveRequest);
 
         MPI_Wait(&upperSendRequest, MPI_STATUS_IGNORE);
         MPI_Wait(&upperReceiveRequest, MPI_STATUS_IGNORE);
