@@ -93,8 +93,7 @@ int main(int argc, char *argv[]) {
 
     // Assign the particles to the grid using the given mass assignment method
     assign(particles, gridNoPad, blitz::shape(nGrid, nGrid, nGrid), method, rank, np);
-    
-    //assert(int(blitz::sum(grid)) == particles.rows());
+
     timer.lap("mass assignment");
 
     if (nGhostCells > 0) {
@@ -200,20 +199,22 @@ int main(int argc, char *argv[]) {
         MPI_Wait(&upperReceiveRequest, MPI_STATUS_IGNORE);
 
         // Add the upper ghost region to the grid
-        grid(blitz::Range(slabStart + nGhostCells, slabStart + nGhostCells * 2), blitz::Range::all(), blitz::Range::all()) += upperGhostRegion;
+        //grid(blitz::Range(slabStart + nGhostCells, slabStart + nGhostCells * 2), blitz::Range::all(), blitz::Range::all()) += upperGhostRegion;
 
         // Add the lower ghost region to the grid
-        grid(blitz::Range(slabStart + nSlabs, slabStart + nSlabs + nGhostCells), blitz::Range::all(), blitz::Range::all()) += lowerGhostRegion;
+        //grid(blitz::Range(slabStart + nSlabs, slabStart + nSlabs + nGhostCells), blitz::Range::all(), blitz::Range::all()) += lowerGhostRegion;
 
         timer.lap("reducing ghost regions");
     }
 
-    float sum = blitz::sum(grid);
+    int sum_local = blitz::sum(grid);
+    int sum_global = 0;
+    std::cout << "Sum of local grid: " << sum_local << std::endl;
 
-    MPI_Reduce(&sum, &sum, 1, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&sum_local, &sum_global, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
-        std::cout << "Sum of grid: " << sum << std::endl;
+        std::cout << "Sum of global grid: " << sum_global << std::endl;
     }
 
     // We can remove the ghost region and the grid still remains contiguous (due to x axis being the primary axis in the data layout)

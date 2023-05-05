@@ -34,4 +34,9 @@ Look at the function `bin` in [helpers.cxx](mass_assignment/src/main.cxx).
 The implementation I used differs a bit from the one explained in the lectures. It uses non blocking I send and I recv to "reduce" the ghost regions in the corresponding cells. The advantage is that is simpler and still very efficent as it takes only a around 20ms on my machine. There is a slight data overhead as I create additional arrays to temporarily store the data. The implementation can be found in [main.cxx](mass_assignment/src/main.cxx).
 
 
-Note that with my current implementation there is a segfault error, which unfortunately i could not trace down in time. I will try to fix it for the next deadline.
+## Current state
+Note that with my current there is still an error with the ghost cell reduction, as the ghost regions have invlaid values in them. 
+
+Furthermore there is another segfault after the ghost cell reduction. 
+
+Unfortunately I was not able to fix these issues in time.
