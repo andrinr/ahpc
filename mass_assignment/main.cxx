@@ -101,109 +101,120 @@ int main(int argc, char *argv[]) {
     //assert(int(blitz::sum(grid)) == particles.rows());
     timer.lap("Mass assignment");
 
-    blitz::Array<float, 3> ghostRegion(nGhostCells, nGrid, nGrid);
+    if (nGhostCells > 0) {
+        blitz::Array<float, 3> upperGhostRegion(nGhostCells, nGrid, nGrid);
+        blitz::Array<float, 3> lowerGhostRegion(nGhostCells, nGrid, nGrid);
 
-    int dimensions_full_array[3] = {nSlabs + nGhostCells * 2, nGrid, nGrid + 2};
-    int dimensions_subarray[3] = {nGhostCells, nGrid, nGrid};
-    int start_coordinates[3] = {0, 0, 0};
-    MPI_Datatype upperGhostType;
-    MPI_Type_create_subarray(
-        3, 
-        dimensions_full_array, 
-        dimensions_subarray,
-        start_coordinates,
-        MPI_ORDER_C, 
-        MPI_FLOAT, 
-        &upperGhostType);
-    MPI_Type_commit(&upperGhostType);
+        int dimensions_full_array[3] = {nSlabs + nGhostCells * 2, nGrid, nGrid + 2};
+        int dimensions_subarray[3] = {nGhostCells, nGrid, nGrid};
 
-    std::cout << "created subarray type " << std::endl;
-    
-    MPI_Datatype upperReceive;
-    MPI_Type_create_subarray(
-        3, 
-        grid.extent().data(),
-        blitz::shape(nGhostCells, nGrid, nGrid).data(), 
-        blitz::shape(nGhostCells, 0, 0).data(),
-        MPI_ORDER_C, 
-        MPI_FLOAT, 
-        &upperReceive);
+        std::cout << "full array dimensions: " << dimensions_full_array[0] << " " << dimensions_full_array[1] << " " << dimensions_full_array[2] << std::endl;
+        std::cout << "subarray dimensions: " << dimensions_subarray[0] << " " << dimensions_subarray[1] << " " << dimensions_subarray[2] << std::endl;
+        int start_coordinates_upper_send[3] = {0, 0, 0};
+        MPI_Datatype upperGhostType;
+        MPI_Type_create_subarray(
+            3, 
+            dimensions_full_array, 
+            dimensions_subarray,
+            start_coordinates_upper_send,
+            MPI_ORDER_C, 
+            MPI_FLOAT, 
+            &upperGhostType);
+        MPI_Type_commit(&upperGhostType);
 
-    MPI_Request upperSendRequest;
-    MPI_Isend(
-        grid.data(), 
-        1, 
-        upperGhostType, 
-        comm.up(), 
-        0, 
-        MPI_COMM_WORLD, 
-        &upperSendRequest);
+        int start_coordinates_upper_recv[3] = {nGhostCells, 0, 0};
+        MPI_Datatype upperReceive;
+        MPI_Type_create_subarray(
+            3, 
+            dimensions_full_array,
+            dimensions_subarray,
+            start_coordinates_upper_recv,
+            MPI_ORDER_C, 
+            MPI_FLOAT, 
+            &upperReceive);
+        MPI_Type_commit(&upperReceive);
 
-    MPI_Request upperReceiveRequest;
-    MPI_Irecv(
-        ghostRegion.data(), 
-        1, 
-        upperReceive, 
-        comm.up(), 
-        0, 
-        MPI_COMM_WORLD, 
-        &upperReceiveRequest);
+        int start_coordinates_lower_send[3] = {nSlabs + nGhostCells, 0, 0};
+        MPI_Datatype lowerGhost;
+        MPI_Type_create_subarray(
+            3, 
+            dimensions_full_array,
+            dimensions_subarray,
+            start_coordinates_lower_send,
+            MPI_ORDER_C, 
+            MPI_FLOAT, 
+            &lowerGhost);
+        MPI_Type_commit(&lowerGhost);
 
-    MPI_Wait(&upperSendRequest, MPI_STATUS_IGNORE);
-    MPI_Wait(&upperReceiveRequest, MPI_STATUS_IGNORE);
+        int start_coordinates_lower_recv[3] = {nSlabs, 0, 0};
+        MPI_Datatype lowerReceive;
+        MPI_Type_create_subarray(
+            3, 
+            dimensions_full_array,
+            dimensions_subarray,
+            start_coordinates_lower_recv,
+            MPI_ORDER_C, 
+            MPI_FLOAT, 
+            &lowerReceive);
+        MPI_Type_commit(&lowerReceive);
 
-    // Add the upper ghost region to the grid
-    grid(blitz::Range(nGhostCells,nGhostCells*2), blitz::Range::all(), blitz::Range::all()) += ghostRegion;
+        MPI_Request lowerSendRequest;
+        MPI_Isend(
+            grid.data(), 
+            1, 
+            lowerGhost, 
+            comm.down(), 
+            0, 
+            MPI_COMM_WORLD, 
+            &lowerSendRequest);
 
-    MPI_Datatype lowerGhost;
-    MPI_Type_create_subarray(
-        3, 
-        grid.extent().data(),
-        blitz::shape(nGhostCells, nGrid, nGrid).data(), 
-        blitz::shape(nSlabs + nGhostCells, 0, 0).data(),
-        MPI_ORDER_C, 
-        MPI_FLOAT, 
-        &lowerGhost);
+        MPI_Request lowerReceiveRequest;
+        MPI_Irecv(
+            lowerGhostRegion.data(), 
+            1, 
+            lowerReceive, 
+            comm.down(), 
+            0, 
+            MPI_COMM_WORLD, 
+            &lowerReceiveRequest);
 
-    MPI_Datatype lowerReceive;
-    MPI_Type_create_subarray(
-        3, 
-        grid.extent().data(),
-        blitz::shape(nGhostCells, nGrid, nGrid).data(), 
-        blitz::shape(nSlabs, 0, 0).data(),
-        MPI_ORDER_C, 
-        MPI_FLOAT, 
-        &lowerReceive);
+        MPI_Request upperSendRequest;
+        MPI_Isend(
+            grid.data(), 
+            1, 
+            upperGhostType, 
+            comm.up(), 
+            0, 
+            MPI_COMM_WORLD, 
+            &upperSendRequest);
 
-    MPI_Request lowerSendRequest;
-    MPI_Isend(
-        grid.data(), 
-        1, 
-        lowerGhost, 
-        comm.down(), 
-        0, 
-        MPI_COMM_WORLD, 
-        &lowerSendRequest);
+        MPI_Request upperReceiveRequest;
+        MPI_Irecv(
+            upperGhostRegion.data(), 
+            1, 
+            upperReceive, 
+            comm.up(), 
+            0, 
+            MPI_COMM_WORLD, 
+            &upperReceiveRequest);
 
-    MPI_Request lowerReceiveRequest;
-    MPI_Irecv(
-        ghostRegion.data(), 
-        1, 
-        lowerReceive, 
-        comm.down(), 
-        0, 
-        MPI_COMM_WORLD, 
-        &lowerReceiveRequest);
+        MPI_Wait(&upperSendRequest, MPI_STATUS_IGNORE);
+        MPI_Wait(&upperReceiveRequest, MPI_STATUS_IGNORE);
+        MPI_Wait(&upperSendRequest, MPI_STATUS_IGNORE);
+        MPI_Wait(&upperReceiveRequest, MPI_STATUS_IGNORE);
 
-    MPI_Wait(&upperSendRequest, MPI_STATUS_IGNORE);
-    MPI_Wait(&upperReceiveRequest, MPI_STATUS_IGNORE);
+        timer.lap("reducing ghost regions");
 
-    // Add the lower ghost region to the grid
-    grid(blitz::Range(nSlabs-nGhostCells, nSlabs), blitz::Range::all(), blitz::Range::all()) += ghostRegion;
+        // Add the upper ghost region to the grid
+        grid(blitz::Range(nGhostCells,nGhostCells*2), blitz::Range::all(), blitz::Range::all()) += upperGhostRegion;
 
+        // Add the lower ghost region to the grid
+        grid(blitz::Range(nSlabs, nSlabs+nGhostCells), blitz::Range::all(), blitz::Range::all()) += lowerGhostRegion;
+    }
+
+    // We can remove the ghost region and the grid still remains contiguous (due to x axis being the primary axis in the data layout)
     blitz::Array<float, 3> gridNoGhost = grid(blitz::Range(nGhostCells, nGhostCells+nSlabs-1), blitz::Range::all(), blitz::Range::all());
     std::cout << "rank " << rank << " has " << gridNoGhost.size() << " size. Should be " << nGrid * nGrid * nGrid << std::endl;
-    timer.lap("reducing ghost regions");
 
     float mean = blitz::mean(grid);
     grid -= mean;
