@@ -68,8 +68,6 @@ int main(int argc, char *argv[]) {
         reshuffleParticles(particlesUnsorted, slabStart, nSlabs,  nGrid, rank, np);
     timer.lap("reshuffling particles");
 
-    std::cout << "rank " << rank << " has " << particles.rows() << " particles" << std::endl;
-
     // Determine the number of ghost cells
     std::map<std::string, int> nGhost = {
         { "ngp", 0 },
@@ -78,8 +76,6 @@ int main(int argc, char *argv[]) {
         { "pcs", 2 }
     };
     int nGhostCells = nGhost[method];
-
-    std::cout << "rank " << rank << " has " << nGhostCells << " ghost cells" << std::endl;
 
     // Create Mass Assignment Grid with padding for fft
     typedef std::complex<float> cplx;
@@ -99,7 +95,7 @@ int main(int argc, char *argv[]) {
     assign(particles, gridNoPad, blitz::shape(nGrid, nGrid, nGrid), method, rank, np);
     
     //assert(int(blitz::sum(grid)) == particles.rows());
-    timer.lap("Mass assignment");
+    timer.lap("mass assignment");
 
     if (nGhostCells > 0) {
         blitz::Array<float, 3> upperGhostRegion(nGhostCells, nGrid, nGrid);
@@ -202,24 +198,29 @@ int main(int argc, char *argv[]) {
         MPI_Wait(&upperReceiveRequest, MPI_STATUS_IGNORE);
         MPI_Wait(&upperSendRequest, MPI_STATUS_IGNORE);
         MPI_Wait(&upperReceiveRequest, MPI_STATUS_IGNORE);
+
         // Add the upper ghost region to the grid
-        grid(blitz::Range(nGhostCells,nGhostCells*2), blitz::Range::all(), blitz::Range::all()) += upperGhostRegion;
+        grid(blitz::Range(slabStart + nGhostCells, slabStart + nGhostCells * 2), blitz::Range::all(), blitz::Range::all()) += upperGhostRegion;
 
         // Add the lower ghost region to the grid
-        grid(blitz::Range(nSlabs, nSlabs+nGhostCells), blitz::Range::all(), blitz::Range::all()) += lowerGhostRegion;
+        grid(blitz::Range(slabStart + nSlabs, slabStart + nSlabs + nGhostCells), blitz::Range::all(), blitz::Range::all()) += lowerGhostRegion;
 
         timer.lap("reducing ghost regions");
     }
 
+    float sum = blitz::sum(grid);
+
+    MPI_Reduce(&sum, &sum, 1, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    if (rank == 0) {
+        std::cout << "Sum of grid: " << sum << std::endl;
+    }
+
     // We can remove the ghost region and the grid still remains contiguous (due to x axis being the primary axis in the data layout)
     blitz::Array<float, 3> gridNoGhost = grid(blitz::Range(nGhostCells, nGhostCells+nSlabs-1), blitz::Range::all(), blitz::Range::all());
-    std::cout << "rank " << rank << " has " << gridNoGhost.size() << " size. Should be " << nGrid * nGrid * nGrid << std::endl;
-
     float mean = blitz::mean(grid);
     grid -= mean;
     grid /= mean;
-
-    std::cout << "rank " << rank << " has " << gridNoGhost.rows() << " slabs" << std::endl;
 
     // Prepare memory to compute the FFT of the 3D grid
     cplx *memory_density_grid = reinterpret_cast <cplx*>( gridNoGhost.data() );
