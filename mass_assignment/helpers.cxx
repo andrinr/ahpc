@@ -17,10 +17,32 @@
 #include <omp.h>
 #endif
 
+WrapX::WrapX(int n0, std::string method) : n0(n0), method(method) {
+    kernels = {
+        { "ngp", &ngp_weights },
+        { "cic", &cic_weights },
+        { "tsc", &tsc_weights },
+        { "pcs", &pcs_weights }
+    };
+
+    range = {
+        { "ngp", 1 },
+        { "cic", 2 },
+        { "tsc", 3 },
+        { "pcs", 4 }
+    };
+
+    tmp = new float[range[method]];
+};
+
+float WrapX::wrap(float x) {
+    return (kernels[method]((x + 0.5) * n0, tmp) + n0) % n0;
+};
+
 void assign(
-    blitz::Array<float, 2> particles, 
-    blitz::Array<float, 3> grid,
-    blitz::TinyVector<int, 3> grid_size,
+    blitz::Array<float, 2> l_particles, 
+    blitz::Array<float, 3> l_grid,
+    blitz::TinyVector<int, 3> g_grid_size,
     std::string method,
     int rank,
     int np) 
@@ -43,10 +65,10 @@ void assign(
     #ifdef _OPENMP
     #pragma omp parallel for
     #endif
-    for (int i=particles.lbound(0); i< particles.extent(0) + particles.lbound(0); ++i) {
-        float x = (particles(i,0) + 0.5) * grid_size(0);
-        float y = (particles(i,1) + 0.5) * grid_size(1);
-        float z = (particles(i,2) + 0.5) * grid_size(2);
+    for (int i=l_particles.lbound(0); i< l_particles.extent(0) + l_particles.lbound(0); ++i) {
+        float x = (l_particles(i,0) + 0.5) * g_grid_size(0);
+        float y = (l_particles(i,1) + 0.5) * g_grid_size(1);
+        float z = (l_particles(i,2) + 0.5) * g_grid_size(2);
 
         float* weightsX = new float[range[method]];
         float* weightsY = new float[range[method]];
@@ -62,18 +84,17 @@ void assign(
 
                     float weight = weightsX[j] * weightsY[k] * weightsZ[l];
 
+                    // if (startX + j > l_grid.extent(0) + l_grid.lbound(0) || startX + j < l_grid.lbound(0)) {
+                    //     std::cout << "x " << l_particles(i,0) << " y " << l_particles(i,1) << " z " << l_particles(i,2) << std::endl;
+                    //     std::cout << "rank " << rank << " : " <<  startX + j  << " out of bounds. pos x " << x  << " gsx " << g_grid_size(0) << std::endl;
+                    // }
                     #ifdef _OPENMP
                     #pragma omp atomic
                     #endif
-                    // Check if 
-                    if (startX + j < grid.lbound(0)|| 
-                        startX + j >= grid.extent(0) +  grid.lbound(0)) {
-                        continue;
-                    }
-                    grid (
-                        startX + j, // Should not go out of bounds
-                        (startY + k + grid_size(1)) % grid_size(1), 
-                        (startZ + l + grid_size(2)) % grid_size(2)) 
+                    l_grid (
+                        (startY + j + g_grid_size(0)) % g_grid_size(1), // Should not go out of bounds
+                        (startY + k + g_grid_size(1)) % g_grid_size(1), 
+                        (startZ + l + g_grid_size(2)) % g_grid_size(2)) 
                         += weight * 1.0f;
                 }
             }
@@ -154,7 +175,7 @@ int getIndex(int k, int kmax, int nBins, bool log) {
     }
 }
 
-void sortParticles(blitz::Array<float, 2> particles) {
+void sortParticles(blitz::Array<float, 2> particles, int n0, std::string method) {
     struct Particle {
         float x;
         float y;
@@ -163,18 +184,21 @@ void sortParticles(blitz::Array<float, 2> particles) {
 
     Particle* particle_Object = reinterpret_cast<Particle*>(particles.data());
 
+    WrapX wrap(n0, method);
+
     std::sort(
         particle_Object, 
         particle_Object + particles.rows(),
-        [&](Particle a, Particle b){ 
-            return a.x < b.x;
+        [&wrap](Particle a, Particle b){ 
+            return wrap.wrap(a.x) < wrap.wrap(b.x);
         }
     );
 }
 
 blitz::Array<float, 2> reshuffleParticles (
-    blitz::Array<float, 2> particlesUnsorted, 
+    blitz::Array<float, 2> particlesLocallySorted, 
     int slabStart, int nSlabs, 
+    std::string method,
     int nGrid, int rank, int np) {
 
     // Communicate the slab sizes and starts to all processes
@@ -196,18 +220,26 @@ blitz::Array<float, 2> reshuffleParticles (
         slabToRank(i) = current_rank;
     } 
 
+    WrapX wrap(nGrid, method);
     // Count the number of particles to send to each process
     blitz::Array<int,1> sendcounts(np);
     blitz::Array<int,1> recvcounts(np);
     sendcounts = 0;
     recvcounts = 0;
-    int start = particlesUnsorted.lbound(0);
-    int end = particlesUnsorted.extent(0) + start;
+    int start = particlesLocallySorted.lbound(0);
+    int end = particlesLocallySorted.extent(0) + start;
     for (int i = start; i < end; i++) {
-        int slab = floor((particlesUnsorted(i,0)+0.5) * nGrid);
+        int slab = floor(wrap.wrap(particlesLocallySorted(i, 0)));
         int particleRank = slabToRank(slab);
         sendcounts(slabToRank(slab))++;
     }
+
+    for (int i = start; i < end; i+=1000) {
+        int slab = floor(wrap.wrap(particlesLocallySorted(i, 0)));
+        std::cout << slab << " slab from " << particlesLocallySorted(i, 0) << std::endl;
+        int particleRank = slabToRank(slab);
+    }
+
     // acount for xzy axes
     sendcounts = sendcounts * 3;
 
@@ -226,6 +258,11 @@ blitz::Array<float, 2> reshuffleParticles (
         recvdispls(i) = recvdispls(i-1) + recvcounts(i-1);
     }
 
+    std::cout << "sendcounts: " << sendcounts << std::endl;
+    std::cout << "recvcounts: " << recvcounts << std::endl;
+    std::cout << "senddispls: " << senddispls << std::endl;
+    std::cout << "recvdispls: " << recvdispls << std::endl;
+
     // Find total number of particles for this rank
     int N_particles = blitz::sum(recvcounts) / 3;
 
@@ -235,7 +272,7 @@ blitz::Array<float, 2> reshuffleParticles (
 
     // Communicate the particles to each process
     MPI_Alltoallv(
-        particlesUnsorted.data(), sendcounts.data(), senddispls.data(), MPI_FLOAT,
+        particlesLocallySorted.data(), sendcounts.data(), senddispls.data(), MPI_FLOAT,
         particles.data(), recvcounts.data(), recvdispls.data(), MPI_FLOAT,
         MPI_COMM_WORLD);
 

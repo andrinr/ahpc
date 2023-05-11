@@ -4,6 +4,21 @@
 #include "blitz/array.h"
 #include <string>
 
+class WrapX {
+public:
+    int n0;
+    std::string method;
+    std::map<std::string, int> range;
+    typedef int (*kernel)(float, float*);
+    std::map<std::string, kernel> kernels;
+
+    float * tmp;
+
+    WrapX(int n0, std::string method);
+
+    float wrap(float x);
+};
+
 void assign(
     blitz::Array<float, 2> particles, 
     blitz::Array<float, 3> grid,
@@ -29,11 +44,12 @@ int getK(
 
 int getIndex (int k, int kmax, int nBins, bool log);
 
-void sortParticles(blitz::Array<float, 2> particles);
+void sortParticles(blitz::Array<float, 2> particles, int n0, std::string method);
 
 blitz::Array<float, 2> reshuffleParticles (
-    blitz::Array<float, 2> particlesUnsorted, 
+    blitz::Array<float, 2> particlesLocallySorted, 
     int slabStart, int nSlabs, 
+    std::string method,
     int nGrid, int rank, int np);
 
 blitz::Array<float, 2> loadParticles(std::string location, int rank, int np);
