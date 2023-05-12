@@ -31,12 +31,9 @@ Look at the function `bin` in [helpers.cxx](mass_assignment/src/main.cxx).
 
 ## Task 8
 
-The implementation I used differs a bit from the one explained in the lectures. It uses non blocking I send and I recv to "reduce" the ghost regions in the corresponding cells. The advantage is that is simpler and still very efficent as it takes only a around 20ms on my machine. There is a slight data overhead as I create additional arrays to temporarily store the data. The implementation can be found in [main.cxx](mass_assignment/src/main.cxx).
+I have implemented the redistribution of particles in [main.cxx](mass_assignment/src/helpers.cxx).
+Furthermore I had to make changes to the `assign` function in [helpers.cxx](mass_assignment/src/helpers.cxx), `reshuffleParticles` in [helpers.cxx](mass_assignment/src/helpers.cxx) and `sortParticles` in [helpers.cxx](mass_assignment/src/helpers.cxx).
 
 
 ## Current state
-Note that with my current there is still an error with the ghost cell reduction, as the ghost regions have invlaid values in them. 
-
-Furthermore there is another segfault after the ghost cell reduction. 
-
-Unfortunately I was not able to fix these issues in time.
+There is still an error which I could not fix in time.
