@@ -463,7 +463,7 @@ int main(int argc, char *argv[])
     grid = grid - 1;
 
     printf("[Rank %d] 2D FFT plan created\n", i_rank);
-    fftwf_plan plan = fftwf_mpi_plan_dft_r2c_2d(
+    fftwf_plan plan_yz = fftwf_mpi_plan_dft_r2c_2d(
         nGrid, nGrid, 
         data, (fftwf_complex *)complex_data, 
         MPI_COMM_WORLD, FFTW_MPI_TRANSPOSED_OUT | FFTW_ESTIMATE);
@@ -474,13 +474,46 @@ int main(int argc, char *argv[])
         std::complex<float> *complex_slab_data = reinterpret_cast<std::complex<float> *>(slab_data);
 
         fftwf_execute_dft_r2c(
-            plan, slab_data, (fftwf_complex *)complex_slab_data);
+            plan_yz, slab_data, (fftwf_complex *)complex_slab_data);
     }
 
     printf("[Rank %d] 2D FFT plan executed for all slabs \n", i_rank);
 
-    fftwf_destroy_plan(plan);
+    fftwf_destroy_plan(plan_yz);
     printf("[Rank %d] 2D FFT plan destroyed\n", i_rank);
+
+    // data is (y, x, z) due to transposed
+    // size is (nGrid, nGrid, nGrid / 2 + 1) 
+    // We need to perform along x-axis which is not contiguous
+    int n[1] = {nGrid};
+    int howmany = local0; // number of slabs
+    int istride = nGrid / 2 + 1; // stride corresponding to z-axis size
+    int ostride = istride; 
+    int idist = 1;
+    int odist = idist;
+
+
+    fftwf_plan plan_x = fftwf_plan_many_dft(
+        1, n, howmany, 
+        (fftwf_complex *)complex_data, n, 
+        istride, idist,
+        (fftwf_complex *)complex_data, n,
+        ostride, odist,
+        FFTW_FORWARD, FFTW_ESTIMATE);
+    printf("[Rank %d] 1D FFT plan created\n", i_rank);
+
+    for (int i = start0; i < start0 + local0; i++) {
+        
+        std::complex<float> * slab_data = kdata(i, blitz::Range::all(), 0).data();
+
+        fftwf_execute_dft(
+            plan_x, (fftwf_complex *)slab_data, (fftwf_complex *)slab_data);
+    }
+    printf("[Rank %d] 1D FFT plan executed\n", i_rank);
+
+    fftwf_destroy_plan(plan_x);
+        
+    printf("[Rank %d] 1D FFT plan destroyed\n", i_rank);
 
     // Linear binning is 1
     // Variable binning is 2
