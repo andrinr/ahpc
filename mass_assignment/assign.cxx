@@ -12,6 +12,7 @@
 #include <vector>
 #include <complex>
 #include <fftw3.h>
+#include <numeric>
 #include <mpi.h>
 #include <fftw3-mpi.h>
 #include <algorithm>
@@ -47,7 +48,7 @@ int precalculate_W(float W[], int order, float r, float cell_half = 0.5)
     case 4:
         return pcs_weights(r, W);
     default:
-        throw std::invalid_argument("[precalculate_W] Order out of bound");
+        throw std::invalid_argument("[precalculate_W] order out of bound");
     }
 }
 
@@ -85,9 +86,7 @@ int get_i_bin(double k, int n_bins, int nGrid, int task = 1)
     }
 }
 
-void save_binning(
-    const int binning, std::vector<float> &fPower, 
-    std::vector<int> &nPower)
+void save_binning(const int binning, std::vector<double> &fPower, std::vector<int> &nPower)
 {
     const char *binning_filename;
     switch (binning)
@@ -105,23 +104,20 @@ void save_binning(
 
     std::ofstream f1(binning_filename);
     f1.precision(6);
-    f1 << "P_k,k" << std::endl;
+    f1 << "P_k,k,n" << std::endl;
     for (int i = 0; i < fPower.size(); ++i)
     {
-        f1 << (nPower[i] != 0 ? (fPower[i] / nPower[i]) : 0) << "," << i + 1 << std::endl;
+        f1 << (nPower[i] != 0 ? (fPower[i] / nPower[i]) : 0) << "," << i + 1 << "," << nPower[i] << std::endl;
     }
     f1.close();
 }
 
-void assign_mass(
-    blitz::Array<float, 2> &r, int part_i_start, int part_i_end, 
-    int nGrid, blitz::Array<float, 3> &grid, int order, 
-    int grid_start, int grid_end)
+void assign_mass(blitz::Array<float, 2> &r, int part_i_start, int part_i_end, int nGrid, blitz::Array<float, 3> &grid, int order, int grid_start, int grid_end)
 {
     // Loop over all cells for this assignment
     float cell_half = 0.5;
     printf("Assigning mass to the grid using order %d\n", order);
-    #pragma omp parallel for
+#pragma omp parallel for
     for (int pn = part_i_start; pn < part_i_end; ++pn)
     {
         float x = r(pn, 0);
@@ -151,11 +147,10 @@ void assign_mass(
                     float W_res = Wx[i - i_start] * Wy[j - j_start] * Wz[k - k_start];
                     if (i < grid_start || i >= grid_end)
                     {
-                        printf("[ERROR] i = %d, grid_start = %d, i_start = %d \n", 
-                            i, grid_start, i_start);
+                        printf("[ERROR] i = %d, grid_start = %d, i_start = %d \n", i, grid_start, i_start);
                     }
-                    // Deposit the mass onto grid(i,j,k)
-                    #pragma omp atomic
+// Deposit the mass onto grid(i,j,k)
+#pragma omp atomic
                     grid(i, wrap_edge(j, nGrid), wrap_edge(k, nGrid)) += W_res;
                 }
             }
@@ -238,17 +233,12 @@ int main(int argc, char *argv[])
 
     // Init FFTW
     fftwf_mpi_init();
-    ptrdiff_t start0, local0, start1, local1;
-    ptrdiff_t block0, block1;
-    ptrdiff_t* sizes = new ptrdiff_t[2];
-    sizes[0] = nGrid;
-    sizes[1] = nGrid;
-
-    auto alloc_tranposed = fftwf_mpi_local_size_many_transposed(
-        2, sizes, nGrid, 
-        FFTW_MPI_DEFAULT_BLOCK, FFTW_MPI_DEFAULT_BLOCK, MPI_COMM_WORLD, 
-        &local0, &start0, &local1, &start1);
-
+    ptrdiff_t start0, local0;
+    ptrdiff_t start1, local1;
+    ptrdiff_t n_transpose[] = {nGrid, nGrid};
+    auto alloc_local = fftwf_mpi_local_size_many_transposed(2, n_transpose, nGrid + 2,
+                                                            FFTW_MPI_DEFAULT_BLOCK, FFTW_MPI_DEFAULT_BLOCK, MPI_COMM_WORLD,
+                                                            &local0, &start0, &local1, &start1);
     // Collect all start0 and local0
     std::vector<int> all_start0(N_rank);
     std::vector<int> all_local0(N_rank);
@@ -349,227 +339,250 @@ int main(int argc, char *argv[])
                   MPI_COMM_WORLD);
 
     printf("[Rank %d] first particle = %f, last particle = %f\n", i_rank, r_local(0, 0), r_local(part_count - 1, 0));
-    int grid_start0 = start0;
-    int grid_end0 = std::min(int(start0 + local0 - 1), int(nGrid)) + order;
-    int grid_start1 = start1;
-    int grid_end1 = int(start1 + local1 - 1);
+    int grid_start = start0;
+    int grid_end = std::min(int(start0 + local0), nGrid) + order - 1;
 
-    float *data = new (std::align_val_t(64)) float[(grid_end0 - grid_start0) * nGrid * (nGrid + 2)];
+    // Complex grid creation with local1 and start1
+    int grid_start_complex = start1;
+    int grid_end_complex = std::min(int(start1 + local1), nGrid);
+    // Make sure that we have room for the ghost region
+    alloc_local = std::max(alloc_local, nGrid * (nGrid / 2 + 1) * (local0 + order - 1));
+    auto alloc_data = fftwf_alloc_complex(alloc_local);
+
+    float *data = reinterpret_cast<float *>(alloc_data);
     blitz::GeneralArrayStorage<3> storage;
-    storage.base() = grid_start0, 0, 0;
-    blitz::Array<float, 3> grid_data(data, blitz::shape(grid_end0 - grid_start0, nGrid, nGrid + 2), blitz::deleteDataWhenDone, storage);
+    storage.base() = grid_start, 0, 0;
+    blitz::Array<float, 3> grid_data(data, blitz::shape(grid_end - grid_start, nGrid, nGrid + 2), blitz::deleteDataWhenDone, storage);
     grid_data = 0.0;
-    blitz::Array<float, 3> grid = grid_data(blitz::Range(grid_start0, grid_end0 - 1), blitz::Range::all(), blitz::Range(0, nGrid - 1));
-    blitz::Array<float, 3> ghost_region = grid(blitz::Range(grid_end0 - order + 1, grid_end0 - 1), blitz::Range::all(), blitz::Range::all());
+    blitz::Array<float, 3> grid = grid_data(blitz::Range(grid_start, grid_end - 1), blitz::Range::all(), blitz::Range(0, nGrid - 1));
+    blitz::Array<float, 3> ghost_region = grid(blitz::Range(grid_end - order + 1, grid_end - 1), blitz::Range::all(), blitz::Range::all());
 
     std::complex<float> *complex_data = reinterpret_cast<std::complex<float> *>(data);
-    blitz::Array<std::complex<float>, 3> kdata(complex_data, blitz::shape(grid_end1 - grid_start1, nGrid, nGrid / 2 + 1));
+
+    blitz::GeneralArrayStorage<3> transposed_storage;
+    transposed_storage.ordering() = 0, 2, 1;
+    transposed_storage.ascendingFlag() = true;
+    transposed_storage.base() = 0, grid_start_complex, 0;
+    blitz::Array<std::complex<float>, 3> kdata(complex_data,
+                                               blitz::shape(nGrid, grid_end_complex - grid_start_complex, nGrid / 2 + 1),
+                                               blitz::neverDeleteData,
+                                               transposed_storage);
+                                               
     start_time = std::chrono::high_resolution_clock::now();
-    assign_mass(r_local, 0, part_count, nGrid, grid, order, grid_start0, grid_end0);
+    assign_mass(r_local, 0, part_count, nGrid, grid, order, grid_start, grid_end);
     printf("[Rank %d] Grid sum after mass assignment = %f\n", i_rank, sum(grid));
     std::chrono::duration<double> diff_assignment = std::chrono::high_resolution_clock::now() - start_time;
     printf("[Rank %d] Mass assignment took %fs\n", i_rank, diff_assignment.count());
 
-    MPI_Request req[3];
-    // First split the MPI_COMM_WORLD communicator into (0,1), (2,3), (4,5)
-    MPI_Comm newcomm1, newcomm2;
-    int color = i_rank / 2;
-    int key = (i_rank + 1) % 2;
-    printf("[FIRST Rank %d] color = %d, key = %d\n", i_rank, color, key);
-    MPI_Comm_split(MPI_COMM_WORLD, color, key, &newcomm1);
-    // Send and receive data in a ring fashion
-    if (key == 0)
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    float actual_mass = sum(grid);
+    MPI_Allreduce(MPI_IN_PLACE, &actual_mass, 1, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+    if (i_rank == 0)
     {
-        MPI_Ireduce(MPI_IN_PLACE, grid.data(), ghost_region.size(), 
-            MPI_FLOAT, MPI_SUM, 0, newcomm1, &req[0]);
-    }
-    else
-    {
-        MPI_Ireduce(ghost_region.data(), nullptr, ghost_region.size(), 
-            MPI_FLOAT, MPI_SUM, 0, newcomm1, &req[0]);
+        printf("Total mass: %f\n", actual_mass);
     }
 
-    // Second split the communicator into (1,2), (3,4), (5,0)
-    if (i_rank == N_rank - 1)
+    if (order != 1)
     {
-        color = 0;
-        key = 1;
-    }
-    else
-    {
-        color = (i_rank + 1) / 2;
-        key = i_rank % 2;
-    }
-
-    printf("[SECOND Rank %d] color = %d, key = %d\n", i_rank, color, key);
-    MPI_Comm_split(MPI_COMM_WORLD, color, key, &newcomm2);
-    if (key == 0)
-    {
-        MPI_Ireduce(MPI_IN_PLACE, grid.data(), ghost_region.size(), 
-            MPI_FLOAT, MPI_SUM, 0, newcomm2, &req[1]);
-    }
-    else
-    {
-        MPI_Ireduce(ghost_region.data(), nullptr, ghost_region.size(), 
-            MPI_FLOAT, MPI_SUM, 0, newcomm2, &req[1]);
-    }
-
-    if (N_rank % 2 == 1)
-    {
-        color = 0;
-        // Odd number of proc
-        MPI_Comm newcomm3;
-        if (i_rank == N_rank - 2)
+        if (N_rank == 1)
         {
-            key = 1;
-        }
-        else if (i_rank == N_rank - 1)
-        {
-            key = 0;
+            grid(blitz::Range(grid_start, grid_start + order - 2), blitz::Range::all(), blitz::Range::all()) += ghost_region;
         }
         else
         {
-            key = 1;
-            color = MPI_UNDEFINED;
-        }
+            MPI_Request requests[3];
+            MPI_Status statuses[3];
+            requests[0] = MPI_REQUEST_NULL;
+            requests[1] = MPI_REQUEST_NULL;
+            requests[2] = MPI_REQUEST_NULL;
+            MPI_Comm newcomm1, newcomm2;
+            int color = i_rank / 2;
+            int key = (i_rank + 1) % 2;
 
-        if (key == 0)
-        {
-            MPI_Ireduce(
-                MPI_IN_PLACE, grid.data(), ghost_region.size(), 
-                MPI_FLOAT, MPI_SUM, 0, newcomm3, &req[2]);
+            // Last rank in odd amount of ranks will be alone in communicator so just ignore it
+            if (!((N_rank % 2 == 1) && (i_rank == N_rank - 1)))
+            {
+                MPI_Comm_split(MPI_COMM_WORLD, color, key, &newcomm1);
+            }
+            else
+            {
+                MPI_Comm_split(MPI_COMM_WORLD, MPI_UNDEFINED, i_rank, &newcomm1); // Create an "empty" communicator for ranks not included in the reduction
+            }
+
+            if (!((N_rank % 2 == 1) && (i_rank == N_rank - 1)))
+            {
+                if (key == 0)
+                {
+                    MPI_Ireduce(MPI_IN_PLACE, grid.data(), (nGrid + 2) * nGrid * (order - 1), MPI_FLOAT, MPI_SUM, 0, newcomm1, &requests[0]);
+                }
+                else
+                {
+                    MPI_Ireduce(ghost_region.data(), nullptr, (nGrid + 2) * nGrid * (order - 1), MPI_FLOAT, MPI_SUM, 0, newcomm1, &requests[0]);
+                }
+            }
+            // Second split the communicator into (1,2), (3,4), (5,0)
+            if (i_rank == N_rank - 1)
+            {
+                color = 0;
+                key = 1;
+            }
+            else
+            {
+                color = (i_rank + 1) / 2;
+                key = i_rank % 2;
+            }
+            // Next to last rank in odd amount of ranks will be alone in communicator so just ignore it
+            if (!((N_rank % 2 == 1) && (i_rank == N_rank - 2)))
+            {
+                MPI_Comm_split(MPI_COMM_WORLD, color, key, &newcomm2);
+            }
+            else
+            {
+                MPI_Comm_split(MPI_COMM_WORLD, MPI_UNDEFINED, i_rank, &newcomm2);
+            }
+            if (!((N_rank % 2 == 1) && (i_rank == N_rank - 2)))
+            {
+                if (key == 0)
+                {
+                    MPI_Ireduce(MPI_IN_PLACE, grid.data(), (nGrid + 2) * nGrid * (order - 1), MPI_FLOAT, MPI_SUM, 0, newcomm2, &requests[1]);
+                }
+                else
+                {
+                    MPI_Ireduce(ghost_region.data(), nullptr, (nGrid + 2) * nGrid * (order - 1), MPI_FLOAT, MPI_SUM, 0, newcomm2, &requests[1]);
+                }
+            }
+
+            if (N_rank % 2 == 1)
+            {
+                MPI_Comm newcomm3;
+                if (i_rank >= N_rank - 2)
+                {
+                    color = 0;
+
+                    // Odd number of proc
+                    if (i_rank == N_rank - 2)
+                    {
+                        key = 1;
+                    }
+                    else if (i_rank == N_rank - 1)
+                    {
+                        key = 0;
+                    }
+                    MPI_Comm_split(MPI_COMM_WORLD, color, key, &newcomm3);
+                }
+                else
+                {
+
+                    MPI_Comm_split(MPI_COMM_WORLD, MPI_UNDEFINED, i_rank, &newcomm3);
+                }
+                if (i_rank >= N_rank - 2)
+                {
+                    if (key == 0)
+                    {
+                        MPI_Ireduce(MPI_IN_PLACE, grid.data(), (nGrid + 2) * nGrid * (order - 1), MPI_FLOAT, MPI_SUM, 0, newcomm3, &requests[2]);
+                    }
+                    else
+                    {
+                        MPI_Ireduce(ghost_region.data(), nullptr, (nGrid + 2) * nGrid * (order - 1), MPI_FLOAT, MPI_SUM, 0, newcomm3, &requests[2]);
+                    }
+                }
+            }
+            MPI_Waitall(3, requests, MPI_STATUS_IGNORE);
         }
-        else
-        {
-            MPI_Ireduce(
-                ghost_region.data(), nullptr, ghost_region.size(),
-                MPI_FLOAT, MPI_SUM, 0, newcomm3, &req[2]);
-        }
-        MPI_Waitall(3, &req[0], MPI_STATUSES_IGNORE);
     }
-    else
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    actual_mass = sum(grid(blitz::Range(grid_start, grid_end - order), blitz::Range::all(), blitz::Range::all()));
+    MPI_Allreduce(MPI_IN_PLACE, &actual_mass, 1, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+    if (i_rank == 0)
     {
-        MPI_Waitall(2, req, MPI_STATUSES_IGNORE);
+        printf("After all reduction grid sum = %f\n", actual_mass);
     }
-
-    printf("[Rank %d] After all reduction grid sum = %f\n", i_rank, 
-        sum(grid(
-            blitz::Range(start0, grid_end0 - order), 
-            blitz::Range::all(), blitz::Range::all())
-        )
-    );
-
     // Overdensity
-    grid = grid - 1;
+    // grid = grid - 1;
 
-    printf("[Rank %d] 2D FFT plan created\n", i_rank);
-    fftwf_plan plan_yz = fftwf_mpi_plan_dft_r2c_2d(
-        nGrid, nGrid, 
-        data, (fftwf_complex *)complex_data, 
-        MPI_COMM_WORLD, FFTW_MPI_TRANSPOSED_OUT | FFTW_ESTIMATE);
+    float diRhoBar = ((1.0f * nGrid * nGrid * nGrid) / actual_mass);
+    grid = grid * diRhoBar - 1.0f;
+    grid /= (nGrid * nGrid * nGrid);
+    // Do the 2D transforms
+    fftwf_plan plan_2d = fftwf_plan_dft_r2c_2d(nGrid, nGrid,
+                                               data,
+                                               (fftwf_complex *)complex_data,
+                                               FFTW_ESTIMATE);
 
-    for (int i = start0; i < start0 + local0; i++) {
-        
-        float * slab_data = grid_data(i, blitz::Range::all(), blitz::Range::all()).data();
-        std::complex<float> *complex_slab_data = reinterpret_cast<std::complex<float> *>(slab_data);
-
-        fftwf_execute_dft_r2c(
-            plan_yz, slab_data, (fftwf_complex *)complex_slab_data);
+    for (int i = grid_start; i < grid_end - order; i++)
+    {
+        fftwf_execute_dft_r2c(plan_2d,
+                              &grid(i, 0, 0),
+                              reinterpret_cast<fftwf_complex *>(&grid(i, 0, 0)));
     }
 
-    printf("[Rank %d] 2D FFT plan executed for all slabs \n", i_rank);
+    // Transpose
+    fftwf_plan plan_transpose = fftwf_mpi_plan_many_transpose(
+        nGrid, nGrid, nGrid + 2,
+        FFTW_MPI_DEFAULT_BLOCK, FFTW_MPI_DEFAULT_BLOCK,
+        data,
+        data,
+        MPI_COMM_WORLD, FFTW_ESTIMATE);
 
-    fftwf_destroy_plan(plan_yz);
-    printf("[Rank %d] 2D FFT plan destroyed\n", i_rank);
+    fftwf_execute_r2r(plan_transpose, data, data);
 
-    // data is (y, x, z) due to transposed
-    // size is (nGrid, nGrid, nGrid / 2 + 1) 
-    // We need to perform along x-axis which is not contiguous
-    int n[1] = {nGrid};
-    int howmany = local0; // number of slabs
-    int istride = nGrid / 2 + 1; // stride corresponding to z-axis size
-    int ostride = istride; 
-    int idist = 1;
-    int odist = idist;
-
-
-    fftwf_plan plan_x = fftwf_plan_many_dft(
-        1, n, howmany, 
-        (fftwf_complex *)complex_data, n, 
-        istride, idist,
-        (fftwf_complex *)complex_data, n,
-        ostride, odist,
-        FFTW_FORWARD, FFTW_ESTIMATE);
-    printf("[Rank %d] 1D FFT plan created\n", i_rank);
-
-    for (int i = start0; i < start0 + local0; i++) {
-        
-        std::complex<float> * slab_data = kdata(i, blitz::Range::all(), 0).data();
-
-        fftwf_execute_dft(
-            plan_x, (fftwf_complex *)slab_data, (fftwf_complex *)slab_data);
+    // Do the 1D transforms
+    constexpr int rank_1d = 1;
+    int n_1d[rank_1d] = {nGrid};
+    int stride_1d = 1;
+    int dist_1d = nGrid;
+    int howmany_1d = nGrid / 2 + 1;
+    fftwf_plan plan_1d = fftwf_plan_many_dft(1, n_1d, howmany_1d,
+                                             (fftwf_complex *)complex_data, n_1d, stride_1d, dist_1d,
+                                             (fftwf_complex *)complex_data, n_1d, stride_1d, dist_1d,
+                                             FFTW_FORWARD, FFTW_ESTIMATE);
+    for (int i = grid_start_complex; i < grid_end_complex; ++i)
+    {
+        fftwf_execute_dft(plan_1d,
+                          (fftwf_complex *)(&kdata(0, i, 0)),
+                          (fftwf_complex *)(&kdata(0, i, 0)));
     }
-    printf("[Rank %d] 1D FFT plan executed\n", i_rank);
-
-    fftwf_destroy_plan(plan_x);
-        
-    printf("[Rank %d] 1D FFT plan destroyed\n", i_rank);
 
     // Linear binning is 1
     // Variable binning is 2
     // Log binning is 3
-    const int binning = 2;
+    const int binning = 1;
 
     int n_bins = 80;
     if (binning == 1)
     {
         n_bins = nGrid;
     }
-    std::vector<float> fPower(n_bins, 0.0);
+    std::vector<double> fPower(n_bins, 0.0);
     std::vector<int> nPower(n_bins, 0);
     float k_max = sqrt((nGrid / 2.0) * (nGrid / 2.0) * 3.0);
 
     // loop over δ(k) and compute k from kx, ky and kz
-    for (int i = 0; i < grid_end0 - grid_start0; i++)
+    for (auto it = kdata.begin(); it != kdata.end(); ++it)
     {
-        int kx = k_indx(i, nGrid);
-        for (int j = 0; j < nGrid; j++)
-        {
-            int ky = k_indx(j, nGrid);
-            for (int l = 0; l < nGrid / 2 + 1; l++)
-            {
-                int kz = l;
+        int kx = k_indx(it.position()[0], nGrid);
+        int ky = k_indx(it.position()[1], nGrid);
+        int kz = it.position()[2];
 
-                float k = sqrt(kx * kx + ky * ky + kz * kz);
-                int i_bin = get_i_bin(k, n_bins, nGrid, binning);
-                if (i_bin == fPower.size())
-                    i_bin--;
-                fPower[i_bin] += std::norm(kdata(i, j, l));
-                nPower[i_bin] += 1;
-            }
-        }
+        float k = sqrt(kx * kx + ky * ky + kz * kz);
+        int i_bin = get_i_bin(k, n_bins, nGrid, binning);
+        if (i_bin == fPower.size())
+            i_bin--;
+        fPower[i_bin] += std::norm(*it);
+        nPower[i_bin] += 1;
     }
-
+    
     if (i_rank == 0)
     {
-        MPI_Reduce(MPI_IN_PLACE, fPower.data(), fPower.size(), 
-        MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+        MPI_Reduce(MPI_IN_PLACE, fPower.data(), fPower.size(), MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+        MPI_Reduce(MPI_IN_PLACE, nPower.data(), nPower.size(), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     }
     else
     {
-        MPI_Reduce(fPower.data(), nullptr, fPower.size(), 
-        MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
-    }
-
-    if (i_rank == 0)
-    {
-        MPI_Reduce(MPI_IN_PLACE, nPower.data(), nPower.size(), 
-        MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
-    }
-    else
-    {
-        MPI_Reduce(nPower.data(), nullptr, nPower.size(), 
-        MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+        MPI_Reduce(fPower.data(), nullptr, fPower.size(), MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+        MPI_Reduce(nPower.data(), nullptr, nPower.size(), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     }
 
     if (i_rank == 0)
@@ -577,5 +590,8 @@ int main(int argc, char *argv[])
         save_binning(binning, fPower, nPower);
     }
 
+    fftwf_destroy_plan(plan_2d);
+    fftwf_destroy_plan(plan_transpose);
+    fftwf_destroy_plan(plan_1d);
     MPI_Finalize();
 }
