@@ -28,6 +28,7 @@ extern "C++" void fft2d(Array<float, 3> grid, int nGrid, int grid_start, int gri
         inembed, istride, idist, onembed, ostride, odist, 
         CUFFT_R2C, batch);
 
+    
     for (int i = grid_start; i < grid_end - order; i++)
     {   
         void *device_data;
