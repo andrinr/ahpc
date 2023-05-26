@@ -46,7 +46,7 @@ int main() {
 
     // in-place
     Array<float,2> raw_data2(n,n+2);
-    Array<float,2> rdata2 = raw_data2(Range(0,n-1),Range(0,n-1));
+    Array<float,2> rdata2 = raw_data2(Range::all(),Range(0,n-1));
     fftwf_plan plan2  = fftwf_plan_dft_r2c_2d(n, n,
         rdata2.data(), reinterpret_cast<fftwf_complex*>(rdata2.data()), FFTW_ESTIMATE);
     fill_array(rdata2);
@@ -58,11 +58,11 @@ int main() {
 
     // Ex 3
     Array<float,2> raw_data3(n,n);
-    Array<float,2> rdata3 = raw_data3(Range(0,n-1),Range(0,n-1));   
+    Array<float,2> rdata3 = raw_data3(Range::all(),Range(0,n-1));   
     fill_array(rdata3);
 
     Array<float,2> raw_data4(n,n);
-    Array<float,2> rdata4 = raw_data4(Range(0,n-1),Range(0,n-1));
+    Array<float,2> rdata4 = raw_data4(Range::all(),Range(0,n-1));
 
     void *d_data3;
     size_t size_in_bytes = rdata3.size() * sizeof(float);
@@ -80,24 +80,24 @@ int main() {
     std::cout << ">>> CUDA Memory Copy " << (all(abs(rdata3 - rdata4) < 1e-5)?"match":"mismatch") << endl;
 
     // Ex 4
-    Array<float,2> raw_data5(n,n);
-    Array<float,2> rdata5 = raw_data5(Range(0,n-1),Range(0,n-1));   
+    Array<float,2> raw_data5(n,n+2);
+    Array<float,2> rdata5 = raw_data5(Range::all(),Range(0,n-1));   
     fill_array(rdata5);
     Array<std::complex<float>, 2> kdata5(reinterpret_cast<std::complex<float>*>(rdata5.data()),
         shape(n, n/2 + 1),neverDeleteData);
 
     void *d_data5;
-    size_in_bytes = rdata5.size() * sizeof(float);
+    size_in_bytes = n * (n+2) * sizeof(float);
 
     cudaMalloc(&d_data5, size_in_bytes);
 
     cudaMemcpy(d_data5, rdata5.data(), size_in_bytes, cudaMemcpyHostToDevice);
 
     int grid_size[2] = {n, n};
-    int inembed[2] = {n, n};
+    int inembed[2] = {n, n+2};
     int onembed[2] = {n, n/2 + 1};
     int batch = 1;
-    int odist = n/2 + 1;
+    int odist = n * (n/2 + 1);
     int idist = 2 * odist;
     int istride = 1;
     int ostride = 1;
@@ -116,8 +116,7 @@ int main() {
 
     cudaFree(d_data5);
 
-    std::cout << ">>> CUDA FFT " << (validate(rdata1,kdata2)?"match":"mismatch") << endl;
-
+    std::cout << ">>> CUDA FFT " << (validate(rdata1,kdata5)?"match":"mismatch") << endl;
 
     return 0;
 }

@@ -17,6 +17,8 @@
 #include <fftw3-mpi.h>
 #include <algorithm>
 
+void fft2d(blitz::Array<float, 3> grid, int nGrid, int grid_start, int grid_end, int order);
+
 int wrap_edge(int coordinate, int N)
 {
     if (coordinate < 0)
@@ -510,13 +512,9 @@ int main(int argc, char *argv[])
                                                data,
                                                (fftwf_complex *)complex_data,
                                                FFTW_ESTIMATE);
-
-    for (int i = grid_start; i < grid_end - order; i++)
-    {
-        fftwf_execute_dft_r2c(plan_2d,
-                              &grid(i, 0, 0),
-                              reinterpret_cast<fftwf_complex *>(&grid(i, 0, 0)));
-    }
+    
+    // Execute CUDA fft2d
+    fft2d(grid, nGrid, grid_start, grid_end, order);
 
     // Transpose
     fftwf_plan plan_transpose = fftwf_mpi_plan_many_transpose(
