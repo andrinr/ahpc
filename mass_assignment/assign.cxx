@@ -17,7 +17,13 @@
 #include <fftw3-mpi.h>
 #include <algorithm>
 
-void fft2d(blitz::Array<float, 3> grid, int nGrid, int grid_start, int grid_end, int order);
+void fft2d(
+    blitz::Array<float, 3> grid, 
+    int nGrid, 
+    int grid_start, 
+    int grid_end, 
+    int order, 
+    int n_streams);
 
 int wrap_edge(int coordinate, int N)
 {
@@ -507,14 +513,31 @@ int main(int argc, char *argv[])
     float diRhoBar = ((1.0f * nGrid * nGrid * nGrid) / actual_mass);
     grid = grid * diRhoBar - 1.0f;
     grid /= (nGrid * nGrid * nGrid);
-    // Do the 2D transforms
-    fftwf_plan plan_2d = fftwf_plan_dft_r2c_2d(nGrid, nGrid,
-                                               data,
-                                               (fftwf_complex *)complex_data,
-                                               FFTW_ESTIMATE);
-    
+
     // Execute CUDA fft2d
-    fft2d(grid, nGrid, grid_start, grid_end, order);
+    fft2d(grid, nGrid, grid_start, grid_end, order, 1);
+
+    // blitz::Array<float, 3> grid_cpy = grid.copy();
+    // float * data_copy = grid_cpy.data();
+    // std::complex<float> * complex_data_copy = reinterpret_cast<std::complex<float> *>(data_copy);
+
+    // // Execute FFTW 2D (for comparison)
+    // fftwf_plan plan_2d = fftwf_plan_dft_r2c_2d(nGrid, nGrid,
+    //                                            data_copy,
+    //                                            (fftwf_complex *)complex_data_copy,
+    //                                            FFTW_ESTIMATE);
+
+    // for (int i = grid_start; i < grid_end - order; i++)
+    // {
+    //     fftwf_execute_dft_r2c(plan_2d,
+    //                           &grid_cpy(i, 0, 0),
+    //                           reinterpret_cast<fftwf_complex *>(&grid(i, 0, 0)));
+    // }
+
+    // std::cout << ">>> CUDA FFT " << (blitz::all(abs(grid - grid_cpy) < 1e-5)?"match":"mismatch") << std::endl;
+    // std::cout << ">>> Deviation: " << blitz::max(abs(grid - grid_cpy)) << std::endl;
+    // std::cout << ">> Range of values: " << blitz::min(grid) << " : " << blitz::max(grid) << std::endl;
+    // std::cout << ">> Range of values (copy): " << blitz::min(grid_cpy) << " : " << blitz::max(grid_cpy) << std::endl;
 
     // Transpose
     fftwf_plan plan_transpose = fftwf_mpi_plan_many_transpose(
@@ -588,7 +611,6 @@ int main(int argc, char *argv[])
         save_binning(binning, fPower, nPower);
     }
 
-    fftwf_destroy_plan(plan_2d);
     fftwf_destroy_plan(plan_transpose);
     fftwf_destroy_plan(plan_1d);
     MPI_Finalize();
