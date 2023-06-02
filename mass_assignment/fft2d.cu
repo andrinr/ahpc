@@ -86,5 +86,7 @@ extern "C++" void fft2d(
         cudaFree(d_work_data_stream[i]);
     }
 
+    std::cout << "FFT 2D CUDA Done" << std::endl;
+
     cufftDestroy(plan);
 }
